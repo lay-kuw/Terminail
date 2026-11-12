@@ -10,12 +10,12 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/macOS-13%2B-f5c2e7?logo=apple&logoColor=white" alt="macOS 13+">
-  <img src="https://img.shields.io/badge/Apple%20Silicon-arm64-cba6f7" alt="Apple Silicon">
-  <img src="https://img.shields.io/badge/Swift-5-f38ba8?logo=swift&logoColor=white" alt="Swift 5">
-  <img src="https://img.shields.io/badge/dependencies-none-b4befe" alt="No dependencies">
-  <img src="https://img.shields.io/badge/size-~2MB-89dceb" alt="Size ~2MB">
-  <img src="https://img.shields.io/badge/license-MIT-a6e3a1" alt="MIT License">
+  <a href="#-requirements"><img src="https://img.shields.io/badge/macOS-13%2B-f5c2e7?logo=apple&logoColor=white" alt="macOS 13+"></a>
+  <a href="#-requirements"><img src="https://img.shields.io/badge/Apple%20Silicon-arm64-cba6f7" alt="Apple Silicon"></a>
+  <a href="https://www.swift.org"><img src="https://img.shields.io/badge/Swift-5-f38ba8?logo=swift&logoColor=white" alt="Swift 5"></a>
+  <a href="#-development"><img src="https://img.shields.io/badge/dependencies-none-b4befe" alt="No dependencies"></a>
+  <a href="https://github.com/lay-kuw/Terminail/releases"><img src="https://img.shields.io/badge/size-~2MB-89dceb" alt="Size ~2MB"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-a6e3a1" alt="MIT License"></a>
 </p>
 
 <p align="center">｡･:*:･ﾟ★ sparkles included, enjoy! ★ﾟ･:*:･｡</p>
