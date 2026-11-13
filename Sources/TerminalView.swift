@@ -38,6 +38,23 @@ final class TerminalView: NSView, NSTextInputClient {
     private var boldIsBright = false
     private var thicken = false
 
+    // カーソルの形（cursor-style）：block（マス全体）/ bar（左端の縦棒）/ underline（下線）
+    private enum CursorStyle { case block, bar, underline }
+    private var cursorStyle = CursorStyle.block
+
+    /// マスの四角を、実際に塗るカーソルの形にする
+    private func cursorShape(_ r: CGRect) -> CGRect {
+        switch cursorStyle {
+        case .block:
+            return r
+        case .bar:
+            return CGRect(x: r.minX, y: r.minY, width: max(2, (cellW * 0.15).rounded()), height: r.height)
+        case .underline:
+            let h = max(2, (cellH * 0.12).rounded())
+            return CGRect(x: r.minX, y: r.maxY - h, width: r.width, height: h)
+        }
+    }
+
     // カーソルのシュン（移動するとき、残像を引きながらすべるように動く）
     private var glide = true
     private var glideFrom: CGRect = .zero
@@ -396,6 +413,11 @@ final class TerminalView: NSView, NSTextInputClient {
         cellOpacity = c.bool("window.opacity_cells") ? CGFloat(max(0, min(1, c.double("window.opacity")))) : 1
         thicken = c.bool("font.thicken")
         glide = c.bool("fx.cursor_glide")
+        switch c.string("cursor.style").lowercased() {
+        case "bar": cursorStyle = .bar
+        case "underline": cursorStyle = .underline
+        default: cursorStyle = .block
+        }
         term.maxScrollback = c.int("shell.scrollback", 0, 200_000)
         buildPalette(colors.palette)
         updateGrid()
@@ -853,9 +875,9 @@ final class TerminalView: NSView, NSTextInputClient {
     private func drawGlide(_ ctx: CGContext) {
         let now = CACurrentMediaTime()
         let e = now - glideStart
-        let head = glideHeadRect(now)
+        let head = cursorShape(glideHeadRect(now))
         let tailK = easeOut(clamp01((e - 0.025) / (Self.glideTail - 0.025)))
-        let tail = lerpRect(glideFrom, glideTo, CGFloat(tailK))
+        let tail = cursorShape(lerpRect(glideFrom, glideTo, CGFloat(tailK)))
         // 先頭としっぽの四角をつなぐ形（凸包）を、うすいカーソル色で塗る
         let pts = [head, tail].flatMap { [CGPoint(x: $0.minX, y: $0.minY), CGPoint(x: $0.maxX, y: $0.minY),
                                           CGPoint(x: $0.maxX, y: $0.maxY), CGPoint(x: $0.minX, y: $0.maxY)] }
@@ -955,7 +977,7 @@ final class TerminalView: NSView, NSTextInputClient {
         // カーソル
         if let cc = cursorCol, cc < n {
             let w: CGFloat = line[cc].attr & A.wide != 0 ? 2 : 1
-            let r = CGRect(x: gx + CGFloat(cc) * cellW, y: y, width: cellW * w, height: cellH)
+            let r = cursorShape(CGRect(x: gx + CGFloat(cc) * cellW, y: y, width: cellW * w, height: cellH))
             if focused && breathing {
                 let b = breathLevel
                 ctx.saveGState()
@@ -966,10 +988,14 @@ final class TerminalView: NSView, NSTextInputClient {
             } else if focused {
                 ctx.setFillColor(cursorColor)
                 ctx.fill(r)
-            } else {
+            } else if cursorStyle == .block {
                 ctx.setStrokeColor(cursorColor)
                 ctx.setLineWidth(1)
                 ctx.stroke(r.insetBy(dx: 0.5, dy: 0.5))
+            } else {
+                // 縦棒・下線は枠にできないので、ウィンドウが後ろにあるあいだは薄く塗る
+                ctx.setFillColor(cursorColor.copy(alpha: 0.5) ?? cursorColor)
+                ctx.fill(r)
             }
         }
 
@@ -1017,7 +1043,8 @@ final class TerminalView: NSView, NSTextInputClient {
             let cell = line[col]
             if cell.attr & A.wideCont != 0 { continue }
             var f = eff(cell).fg
-            if let cc = cursorCol, cc == col, focused { f = Self.defBgAsFg }
+            // ブロックのときだけ、カーソルの下の文字を背景色で抜く（縦棒・下線は文字に重ならない）
+            if let cc = cursorCol, cc == col, focused, cursorStyle == .block { f = Self.defBgAsFg }
             let at = cell.attr & (A.bold | A.italic | A.underline | A.strike | A.dim)
             let ch = cell.ch == 0 ? 32 : cell.ch
             if ch == 32 && at & (A.underline | A.strike) == 0 { flush(); continue }

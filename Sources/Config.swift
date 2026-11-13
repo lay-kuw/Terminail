@@ -76,7 +76,7 @@ final class Config {
         "font-family": "font.family", "font-fallback": "font.fallback", "font-size": "font.size",
         "line-height": "font.line_height", "font-thicken": "font.thicken",
         "theme": "colors.theme", "background": "colors.background", "foreground": "colors.foreground",
-        "cursor-color": "colors.cursor", "selection-background": "colors.selection",
+        "cursor-color": "colors.cursor", "cursor-style": "cursor.style", "selection-background": "colors.selection",
         "bold-is-bright": "colors.bold_is_bright",
         "hotkey": "hotkey.key",
         "summon-animation": "summon.animation", "summon-random": "summon.random_pool", "summon-speed": "summon.speed",
@@ -188,6 +188,9 @@ final class Config {
     # Animation speed (0.5 = twice as fast, 2.0 = slow)
     summon-speed = 1.0
 
+    # Cursor shape: block / bar / underline
+    cursor-style = block
+
     # Wiggle the screen on a bell
     bell-shake = true
     # Sparkles while typing
@@ -258,6 +261,7 @@ final class Config {
     font-thicken = false
     theme = tokyonight
     bold-is-bright = false
+    cursor-style = block
     hotkey = option+space
     summon-animation = glitch
     summon-random = fade, particle, glitch

@@ -233,6 +233,9 @@ summon-random = fade, particle, glitch
 # Animation speed (0.5 = twice as fast, 2.0 = slow)
 summon-speed = 1.0
 
+# Cursor shape: block / bar / underline
+cursor-style = block
+
 # Wiggle the screen on a bell
 bell-shake = true
 # Sparkles while typing
