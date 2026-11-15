@@ -92,3 +92,7 @@ case "$MODE" in
     echo "✦ dmg: $DMG ($(du -sh "$DMG" | cut -f1))"
     ;;
 esac
+
+# install / dmg のあとは、build/ のアプリはもう要らないので片付ける
+# （残しておくと Spotlight が同じアプリを2つ見つけてしまう）。ビルドだけ・dev.sh のときは使うので残す
+case "$MODE" in install|dmg) rm -rf "$APP" ;; esac
