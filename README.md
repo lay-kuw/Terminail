@@ -35,18 +35,20 @@
 - [Feature details](#-feature-details)
 - [Configuration](#-configuration)
 - [What works](#-what-works)
+- [Uninstall](#-uninstall)
 - [Development](#-development)
 - [License](#-license)
 
 ## ✨ Features
 
-- **🪟 Frosted glass**: set the opacity, blur, and corner roundness however you like. Comes with TokyoNight and 5 more themes
+- **🪟 Frosted glass**: set the opacity and blur however you like. Comes with TokyoNight and 5 more themes
 - **⌨️ Summon with a hotkey**: `⌥ Space` shows or hides every window at once, with a fade / particle / glitch entrance
 - **✦ Tabs**: each tab gets an icon (✦ ☾ ♪ ♡ ...) and its own color. With 2+ tabs, the window edge glows in the tab's color
-- **💖 Playful bits**: sparkles when you type, press Enter, or delete. The cursor glides, the screen wiggles on a bell, and the cursor "breathes" when you're idle
+- **◫ Split panes**: `⌘W` splits a tab into two panes, side by side or stacked. Each tab splits on its own
+- **💖 Playful bits**: sparkles when you type, press Enter, or delete. The cursor glides, the screen wiggles on a bell, the cursor "breathes" when you're idle, and tabs and panes pop in and poof away with a little sparkle
 - **🌠 Gliding-light scrollbar**: a little light slides along the right edge to show where you are. You can grab it and drag, too
 - **🔔 Long-command alerts**: when a command finishes in a tab you aren't looking at, a toast, the Dock, and the tab icon let you know
-- **🔍 Search & 📝 logging**: search through everything, including scrollback. Record a tab to a text file
+- **🔍 Search & 📝 logging**: search through everything, including scrollback. Record any pane to a text file
 - **🔒 Security**: Secure Keyboard Entry, and pasted text can't sneakily run commands
 - **🇯🇵 Japanese input**: full IME support, with Menlo + Hiragino as the default fonts
 - **⚡ Light**: almost nothing runs while idle. Only the lines that changed are redrawn
@@ -78,20 +80,21 @@ To start it at login, add it in System Settings → General → Login Items.
 | Show / hide all windows | `⌥ Space` (configurable) |
 | New window | `⌘N` |
 | New tab | `⌘T` |
-| Next / previous tab | `⌘]` / `⌘[` (or click the tab bar) |
-| Close a tab | `exit` (closes the window if it's the last tab) |
-| Close a window | `⌘W` or the red button |
+| Split a tab / flip the split | `⌘W` (splits in two; press again to swap side-by-side ⇄ stacked) |
+| Next / previous pane or tab | `⌘]` / `⌘[` (goes through each pane, then on to the next tab. Clicking works too) |
+| Close a pane or tab | `exit` (closes just that pane when split, or the tab when it's the only one) |
+| Close a window | The red button, or `exit` in the last pane of the last tab |
 | Copy / paste | `⌘C` / `⌘V` (drag to select, double-click for a word) |
-| Search | `⌘F` to open / close |
+| Search | `⌘F` to open / close (in the current pane) |
 | Stop a paste midway | `Ctrl+C` (drops the part of a big paste that hasn't been sent yet) |
 | Font size | `⌘+` / `⌘-`, `⌘0` to reset |
-| Clear screen and scrollback | `⌘K` |
-| Start / stop a log | Edit → New Log… / Stop Log |
+| Clear screen and scrollback | `⌘K` (in the current pane) |
+| Start / stop a log | Edit → New Log… / Stop Log (for the current pane) |
 | Open the config file | `⌘,` |
 | Quit | `⌘Q`, or close the last window |
 
 - All windows are equal. The hotkey shows and hides them together, and hiding takes you back to the app you were using
-- Closing the last window (red button, `⌘W`, or `exit` in the last tab) also quits the app
+- Closing the last window (the red button, or `exit` in the last pane of the last tab) also quits the app
 - The Window menu lists open windows as Terminail 1, 2, … (the current one gets a ✦)
 - Opening the app again doesn't start a second copy. The running one just pops its window out
 
@@ -106,6 +109,24 @@ To start it at login, add it in System Settings → General → Login Items.
 - `tab-style = dots`: icons lined up in the middle of the traffic-light row, with the current tab's name below
 - Icons go ✦ ☾ ♪ ♡ ... in the order tabs are opened (`tab-icons = symbol`). You can also pick `none` or `custom` (`tab-icon-list = ★, ☆, ♠`)
 - When you're back to one tab, it resets to the starting look (✦, white)
+
+</details>
+
+<details>
+<summary><b>◫ Split panes</b></summary>
+
+- `⌘W` splits the current tab into two panes. Two is the max. You stay in the pane you were using, and the new one opens beside it
+- Press `⌘W` again on a split tab to swap between side by side and stacked
+- `split-direction` sets which way a new split goes: `left-right` (default, side by side) or `top-bottom` (stacked)
+- Each tab splits on its own, so some tabs can be split while others aren't
+- A new pane starts fresh in your home folder, just like a new tab
+- `⌘]` / `⌘[` walk through every pane in order: tab 1 pane 1 → tab 1 pane 2 → tab 2 pane 1 → … and back to the start. You can also just click a pane
+- The pane you're not typing in is slightly dimmed, and its cursor turns into an outline
+- `exit` closes just that pane, and the other one fills the tab again
+- Search, `⌘K`, and logging work on the current pane only. Tab colors, the glowing edge, and font size are shared by the whole tab
+- A split tab gets a little split icon next to its name in the tab bar, showing which way it's split
+- Long-command alerts treat both panes as visible: if you're looking at the tab, neither pane will ping you
+- Splitting draws a glowing line between the panes, and a closed pane poofs away in sparkles (`tab-animations = false` turns these off)
 
 </details>
 
@@ -154,7 +175,7 @@ No shell setup needed. (Terminail checks the foreground process once a second.)
 <details>
 <summary><b>🔍 Search</b></summary>
 
-- `⌘F` opens a search box at the top right. It searches scrollback too (not case-sensitive)
+- `⌘F` opens a search box at the top right of the current pane. It searches scrollback too (not case-sensitive)
 - `⏎` / ▲ for older matches, `⇧⏎` / ▼ for newer ones, and `Esc` / × / `⌘F` again to close
 
 </details>
@@ -162,8 +183,9 @@ No shell setup needed. (Terminail checks the foreground process once a second.)
 <details>
 <summary><b>📝 Logging</b></summary>
 
-- Edit → New Log… lets you pick a file. Everything in the tab so far is written out, and new output keeps being added
-- A small red dot at the top right of the window shows that it's recording. It stops on Stop Log or when the tab closes
+- Edit → New Log… lets you pick a file. Everything in the current pane so far is written out, and new output keeps being added
+- Each pane records on its own, so you can log both panes of a split tab to separate files
+- A small red dot at the top right of the pane shows that it's recording. It stops on Stop Log or when the pane closes
 - Saved as plain text with colors and styling stripped (things wiped by `clear` are kept, too)
 - Log files are created so only you can read and write them (mode 600)
 - Lines are appended once they scroll off the screen. The last few lines still on screen are written when you Stop Log
@@ -206,8 +228,6 @@ window-rows = 25
 background-opacity = 0.80
 # Background blur: 0 (none) to 100
 background-blur = 0
-# Corner roundness
-corner-radius = 8
 # Keep the window above everything else
 always-on-top = false
 
@@ -250,6 +270,8 @@ smooth-scroll = true
 # Sparkles get sucked in when you delete (how many: delete-sparkle-count)
 delete-sparkles = true
 delete-sparkle-count = 2
+# Little animations when you open / close tabs and split / close panes
+tab-animations = true
 
 # Tabs (⌘T to open, exit to close)
 # Look: dots (a row of icons) / pill (round tabs with names)
@@ -261,6 +283,10 @@ tab-icons = symbol
 tab-bar = auto
 # Tab colors: cursor (cursor and sparkles too) / icon (icon only) / edge (cursor + glowing window edge) / off
 tab-colors = edge
+
+# Split panes (⌘W to split a tab in two, ⌘W again to flip, exit to close one)
+# left-right (side by side) / top-bottom (stacked)
+split-direction = left-right
 
 # Tell you when a long command finishes (only for tabs and windows you aren't looking at)
 # toast (small, top right) / system (macOS notification) / dock (Dock bounce) / tab (glowing tab icon) / off
@@ -327,10 +353,35 @@ palette = 12=#9AB8FF
 - ✅ 256 colors and TrueColor, bold / italic / underline, full-width characters, Japanese input
 - 🔺 Emoji (single emoji show up fine, but combined ones like 👩‍💻 and skin-tone variants break)
 - ✅ Scrollback, the alternate screen (vim / less / htop and friends), bracketed paste
-- ✅ Tabs, multiple windows, search, logging
+- ✅ Tabs, split panes (up to two per tab), multiple windows, search, logging
 - ✅ Text rewraps when you change the window width or font size (nothing disappears when you make it narrow). While dragging, text stays pinned to the top left, and the padding tidies up when you let go
 - ✅ Long lines wrapped by the window width stay as one line when copied or logged
-- 💭 Not yet: split panes, mouse reporting, ligatures, inline images (I might add them someday, if I feel like it~)
+- 💭 Not yet: mouse reporting, ligatures, inline images (I might add them someday, if I feel like it~)
+
+## 🫧 Uninstall
+
+```sh
+cd Terminail
+bash build.sh uninstall
+```
+
+This quits Terminail and removes everything it leaves on your Mac:
+
+| Where | What |
+|---|---|
+| `~/Applications/Terminail.app`, `/Applications/Terminail.app` | The app |
+| `~/.config/terminail/` | Your config file |
+| `~/Library/Preferences/io.github.lay-kuw.terminail.plist` | Small bits macOS remembers for the app |
+| `~/Library/Saved Application State/io.github.lay-kuw.terminail.savedState/` | Window state saved by macOS |
+| `~/Library/Caches/io.github.lay-kuw.terminail/` | Cache |
+
+A few things stay behind, since only you know where they are:
+
+- **Log files**: they're wherever you saved them, so delete them yourself
+- **Notifications**: if you allowed `system` notifications, remove Terminail in System Settings → Notifications
+- **Login Items**: if you added it, remove it in System Settings → General → Login Items
+
+Then you can delete the `Terminail` folder you cloned. Bye bye, and thanks for trying it (｡•ᴗ•｡)♡
 
 ## 🧸 Development
 
@@ -344,7 +395,7 @@ Every time you edit something in `Sources/`, it rebuilds and relaunches by itsel
 .
 ├── Sources/
 │   ├── main.swift          The app itself (menus, hotkey, show/hide, alerts, frosted glass)
-│   ├── TermWindow.swift    One window (tabs, tab bar, search box, glowing edge)
+│   ├── TermWindow.swift    One window (tabs, split panes, tab bar, search box, glowing edge)
 │   ├── TerminalView.swift  Drawing, key input, IME, selection, scrolling, search, logging
 │   ├── Terminal.swift      Escape-sequence parsing and screen state
 │   ├── PTY.swift           Starting the shell and talking to it
@@ -355,7 +406,7 @@ Every time you edit something in `Sources/`, it rebuilds and relaunches by itsel
 │   └── Themes.swift        Color themes
 ├── Resources/AppIcon.png   App icon (1024×1024)
 ├── Info.plist
-├── build.sh                Build / install
+├── build.sh                Build / install / uninstall
 ├── dev.sh                  Watch for changes and rebuild
 └── LICENSE                 MIT License
 ```

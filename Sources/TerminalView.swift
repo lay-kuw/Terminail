@@ -19,9 +19,25 @@ final class TerminalView: NSView, NSTextInputClient {
     private var padR: CGFloat = 16
     private var padT: CGFloat = 16
     private var padB: CGFloat = 16
-    private var topPad: CGFloat { padT + 28 + extraTop }   // 信号ボタンのぶん（＋タブバーのぶん）
+    private var topPad: CGFloat { padT + (chromeTop ? 28 + extraTop : 0) }   // 信号ボタンのぶん（＋タブバーのぶん）
     /// タブバーが使う上の余白（dots スタイルのタブ名の行など）
     var extraTop: CGFloat = 0 { didSet { if extraTop != oldValue { updateGrid(); needsDisplay = true } } }
+    /// ウィンドウの上端にある画面か（上下に分割したときの下の画面は false：信号ボタンとタブバーのぶんの余白をとらない）
+    var chromeTop = true { didSet { if chromeTop != oldValue { updateGrid(); needsDisplay = true } } }
+
+    /// 信号ボタンとタブバーのぶん、上にとっている高さ（下の画面なら 0）
+    var chromeHeight: CGFloat { chromeTop ? 28 + extraTop : 0 }
+
+    /// 分割しているとき、いま操作している画面か。false なら少し暗く描いて、カーソルは枠だけにする
+    var isActivePane = true {
+        didSet {
+            guard isActivePane != oldValue else { return }
+            if !isActivePane { stopBreath() }
+            needsDisplay = true
+        }
+    }
+    /// クリックなどで、キー入力がこの画面に移った
+    var onFocus: (() -> Void)?
     private var balance = false     // 余ったすき間を上下左右に均等に振り分ける（padding-balance）
     private var balX: CGFloat = 0
     private var balY: CGFloat = 0
@@ -287,7 +303,7 @@ final class TerminalView: NSView, NSTextInputClient {
     }
 
     private func checkIdle() {
-        guard idleEffect, !breathing, let w = window, w.isVisible, w.isKeyWindow,
+        guard idleEffect, !breathing, isActivePane, let w = window, w.isVisible, w.isKeyWindow,
               CACurrentMediaTime() - lastActivity >= idleAfter else { return }
         breathStart = CACurrentMediaTime()
         let t = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in self?.breathTick() }
@@ -296,7 +312,7 @@ final class TerminalView: NSView, NSTextInputClient {
     }
 
     private func breathTick() {
-        guard let w = window, w.isKeyWindow else { stopBreath(); return }
+        guard isActivePane, let w = window, w.isKeyWindow else { stopBreath(); return }
         setNeedsDisplay(cellRect(term.cx, term.cy, w: 2).insetBy(dx: -18, dy: -18))
     }
 
@@ -347,7 +363,11 @@ final class TerminalView: NSView, NSTextInputClient {
     override var isFlipped: Bool { true }
     override var isOpaque: Bool { false }
     override var acceptsFirstResponder: Bool { true }
-    override func becomeFirstResponder() -> Bool { needsDisplay = true; return true }
+    override func becomeFirstResponder() -> Bool {
+        needsDisplay = true
+        onFocus?()
+        return true
+    }
     override func resignFirstResponder() -> Bool { needsDisplay = true; return true }
 
     // MARK: - 設定
@@ -591,7 +611,7 @@ final class TerminalView: NSView, NSTextInputClient {
         ctx.setShouldSmoothFonts(thicken)   // オフにすると細めの文字になる
         let topAbs = term.scrollback.count - viewOffset
         let sel = orderedSel()
-        let focused = window?.isKeyWindow ?? false
+        let focused = (window?.isKeyWindow ?? false) && isActivePane
         let showCursor = viewOffset == 0 && term.cursorVisible && marked.length == 0
         let gliding = showCursor && updateGlide() && focused
         if gliding { drawGlide(ctx) }
@@ -615,6 +635,12 @@ final class TerminalView: NSView, NSTextInputClient {
             let red = palette.count > 1 ? palette[1] : CGColor(srgbRed: 0.97, green: 0.46, blue: 0.56, alpha: 1)
             ctx.setFillColor(red)
             ctx.fillEllipse(in: CGRect(x: bounds.maxX - 18, y: 11, width: 7, height: 7))
+        }
+        if !isActivePane {   // 分割中に操作していない画面は、背景の色を薄く重ねて少し暗く
+            // 塗るのは自分の bounds の中だけ。macOS 14 以降、dirtyRect はビューの外まで広がることがあり、
+            // dirtyRect をそのまま塗ると、となりの画面まで暗くしてしまう
+            ctx.setFillColor(bgSolid.copy(alpha: 0.45) ?? bgSolid)
+            ctx.fill(dirtyRect.intersection(bounds))
         }
     }
 

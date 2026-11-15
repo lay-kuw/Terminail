@@ -577,3 +577,75 @@ final class SuckFX: FXItem {
     }
 }
 
+
+// MARK: - 画面分割・タブの開け閉め
+
+/// 分割したとき：仕切りの線が、真ん中から両端へ光りながらのびて、ふわっと消える
+final class SplitBeamFX: FXItem {
+    private let a, b: CGPoint            // 線の両端（画面座標）
+    private let color: CGColor
+    private let start = CACurrentMediaTime()
+    private static let grow = 0.24       // のびきるまで
+    private static let fade = 0.4        // 消えるまで
+    var drawsOverlay: Bool { true }
+
+    init(from a: CGPoint, to b: CGPoint, color: CGColor) {
+        self.a = a
+        self.b = b
+        self.color = color
+    }
+
+    func step(_ now: CFTimeInterval) -> Bool { now - start < Self.grow + Self.fade }
+
+    func draw(_ ctx: CGContext) {
+        let t = CACurrentMediaTime() - start
+        let g = CGFloat(easeOut(clamp01(t / Self.grow)))
+        let f = clamp01((t - Self.grow) / Self.fade)
+        let mid = CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
+        let p0 = CGPoint(x: mid.x + (a.x - mid.x) * g, y: mid.y + (a.y - mid.y) * g)
+        let p1 = CGPoint(x: mid.x + (b.x - mid.x) * g, y: mid.y + (b.y - mid.y) * g)
+        ctx.setAlpha(CGFloat(1 - f))
+        ctx.setLineCap(.round)
+        // にじむ光と、白っぽい芯
+        ctx.setShadow(offset: .zero, blur: 12, color: color)
+        ctx.setStrokeColor(color)
+        ctx.setLineWidth(2.5)
+        ctx.move(to: p0); ctx.addLine(to: p1); ctx.strokePath()
+        ctx.setShadow(offset: .zero, blur: 0, color: nil)
+        ctx.setStrokeColor(CGColor(gray: 1, alpha: 0.85))
+        ctx.setLineWidth(0.8)
+        ctx.move(to: p0); ctx.addLine(to: p1); ctx.strokePath()
+        // のびている先っぽにキラッ
+        if g < 1 {
+            let white = CGColor(gray: 1, alpha: 1)
+            sparkle(ctx, p0.x, p0.y, 4, white)
+            sparkle(ctx, p1.x, p1.y, 4, white)
+        }
+    }
+}
+
+/// 閉じた画面・タブ：最後の姿（カードにした写し）が、少し縮んで浮き上がりながら消えていく
+final class PoofFX: FXItem {
+    private let image: CGImage
+    private let rect: CGRect             // 画面座標
+    private let start = CACurrentMediaTime()
+    private static let duration = 0.32
+    var drawsOverlay: Bool { true }
+
+    init(image: CGImage, rect: CGRect) {
+        self.image = image
+        self.rect = rect
+    }
+
+    func step(_ now: CFTimeInterval) -> Bool { now - start < Self.duration }
+
+    func draw(_ ctx: CGContext) {
+        let k = CGFloat(easeOut(clamp01((CACurrentMediaTime() - start) / Self.duration)))
+        let s = 1 - 0.07 * k
+        let w = rect.width * s, h = rect.height * s
+        let r = CGRect(x: rect.midX - w / 2, y: rect.midY - h / 2 + 8 * k, width: w, height: h)
+        ctx.setAlpha(1 - k)
+        ctx.interpolationQuality = .medium
+        ctx.draw(image, in: r)
+    }
+}

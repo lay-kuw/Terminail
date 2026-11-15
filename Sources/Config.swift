@@ -67,7 +67,7 @@ final class Config {
         "window-width": "window.width", "window-height": "window.height",
         "background-opacity": "window.opacity", "background-opacity-cells": "window.opacity_cells",
         "background-blur": "window.blur", "background-blur-mode": "window.blur_mode",
-        "corner-radius": "window.corner_radius", "always-on-top": "window.always_on_top",
+        "always-on-top": "window.always_on_top",
         "window-theme": "window.appearance",
         "window-padding": "window.padding", "window-padding-balance": "window.padding_balance",
         "window-padding-x": "window.padding_x", "window-padding-y": "window.padding_y",
@@ -84,11 +84,13 @@ final class Config {
         "cursor-sparkles": "fx.cursor_trail", "cursor-sparkle-count": "fx.trail_sparkles",
         "enter-sparkles": "fx.enter_burst", "enter-sparkle-count": "fx.enter_sparkles",
         "cursor-glide": "fx.cursor_glide", "delete-sparkles": "fx.delete_sparkles",
+        "tab-animations": "fx.tab_anim",
         "delete-sparkle-count": "fx.delete_sparkle_count",
         "secure-keyboard-entry": "security.secure_input",
         "smooth-scroll": "fx.smooth_scroll", "tab-colors": "tabs.colors", "notify-after": "notify.after",
         "idle-effect": "fx.idle", "idle-after": "fx.idle_after",
         "tab-style": "tabs.style", "tab-icons": "tabs.icons", "tab-bar": "tabs.bar",
+        "split-direction": "split.direction",
         "command": "shell.program", "scrollback-limit": "shell.scrollback", "macos-option-as-alt": "shell.option_as_meta",
     ]
 
@@ -161,8 +163,6 @@ final class Config {
     background-opacity = 0.80
     # Background blur: 0 (none) to 100
     background-blur = 0
-    # Corner roundness
-    corner-radius = 8
     # Keep the window above everything else
     always-on-top = false
 
@@ -205,6 +205,8 @@ final class Config {
     # Sparkles get sucked in when you delete (how many: delete-sparkle-count)
     delete-sparkles = true
     delete-sparkle-count = 2
+    # Little animations when you open / close tabs and split / close panes
+    tab-animations = true
 
     # Tabs (⌘T to open, exit to close)
     # Look: dots (a row of icons) / pill (round tabs with names)
@@ -216,6 +218,10 @@ final class Config {
     tab-bar = auto
     # Tab colors: cursor (cursor and sparkles too) / icon (icon only) / edge (cursor + glowing window edge) / off
     tab-colors = edge
+
+    # Split panes (⌘W to split a tab in two, ⌘W again to flip, exit to close one)
+    # left-right (side by side) / top-bottom (stacked)
+    split-direction = left-right
 
     # Tell you when a long command finishes (only for tabs and windows you aren't looking at)
     # toast (small, top right) / system (macOS notification) / dock (Dock bounce) / tab (glowing tab icon) / off
@@ -243,7 +249,6 @@ final class Config {
     background-opacity-cells = true
     background-blur = 0
     background-blur-mode = layer
-    corner-radius = 8
     window-theme = dark
     window-padding = 4
     window-padding-balance = true
@@ -275,10 +280,12 @@ final class Config {
     cursor-glide = true
     delete-sparkles = true
     delete-sparkle-count = 2
+    tab-animations = true
     tab-style = pill
     tab-icons = symbol
     tab-bar = auto
     tab-colors = edge
+    split-direction = left-right
     smooth-scroll = true
     notify = toast, dock, tab
     notify-after = 10

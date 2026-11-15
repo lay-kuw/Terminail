@@ -90,8 +90,21 @@ final class GlassView: NSVisualEffectView {
 
 /// タイトルバーなし・画面外にも動かせるウィンドウ
 final class AppWindow: NSWindow {
-    var cornerRadius: CGFloat = 16 {
-        didSet { if cornerRadius != oldValue { invalidateShadow() } }
+    /// macOS が実際にこのウィンドウに使っている角の丸さ。
+    /// macOS 26 以降はウィンドウの種類で丸さが変わり、それを取り出す公開の方法がないので、
+    /// AppKit の中の値を読めれば読む（読むだけ。書き換えはしない）。読めなければ大きめの値にして、
+    /// 光る枠やすりガラスが角で切れないようにする。フルスクリーンでは角がないので 0
+    var cornerRadius: CGFloat {
+        if styleMask.contains(.fullScreen) { return 0 }
+        let key = "_cornerRadius"
+        let candidates: [NSObject?] = [self, contentView?.superview]   // ウィンドウ本体と、その枠のビュー
+        for obj in candidates.compactMap({ $0 }) where obj.responds(to: NSSelectorFromString(key)) {
+            if let n = obj.value(forKey: key) as? NSNumber, n.doubleValue > 0, n.doubleValue < 100 {
+                return CGFloat(n.doubleValue)
+            }
+        }
+        if #available(macOS 26.0, *) { return 26 }
+        return 10
     }
 
     override var canBecomeKey: Bool { true }
@@ -285,7 +298,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         switch item.action {
         case #selector(newLog): return keyTermWindow.map { !$0.isLogging } ?? false
         case #selector(stopLog): return keyTermWindow?.isLogging ?? false
-        case #selector(find): return keyTermWindow != nil
+        case #selector(find), #selector(splitPane): return keyTermWindow != nil
         default: return true
         }
     }
@@ -299,6 +312,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         w.onEnter = { [weak self] w, r in self?.enterBurst(w, r) }
         w.onType = { [weak self] w, r in self?.typeTrail(w, r) }
         w.onDelete = { [weak self] w, r in self?.deleteSuck(w, r) }
+        w.onTransition = { [weak self] w, t in self?.transition(w, t) }
         w.onClosed = { [weak self] w in self?.windowClosed(w) }
         w.onCommandFinished = { [weak self] w, t, cmd, took in self?.commandFinished(w, t, cmd, took) }
         return w
@@ -322,7 +336,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         if let w = keyTermWindow { w.newTab() } else { newWindow() }
     }
 
-    /// ⌘] / ⌘[ でタブ切り替え、⌘+ / ⌘- / ⌘0 で文字サイズ、⌘K で履歴を消す（メニューには出さない）
+    /// ⌘] / ⌘[ で画面とタブの切り替え、⌘+ / ⌘- / ⌘0 で文字サイズ、⌘K で履歴を消す（メニューには出さない）
     private func watchTabKeys() {
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
             guard let self,
@@ -352,9 +366,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         if windows.isEmpty { NSApp.terminate(nil) }
     }
 
-    /// ⌘W：いまのウィンドウを閉じる
-    @objc func closeWindow() {
-        NSApp.keyWindow?.performClose(nil)
+    /// ⌘W：いまのタブを2つの画面に分ける。分けていれば、左右と上下を入れ替える
+    /// （ウィンドウを閉じるのは赤ボタン、または最後の画面で exit）
+    @objc func splitPane() {
+        keyTermWindow?.splitOrFlip()
     }
 
     private func applyConfig() {
@@ -554,6 +569,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
     }
 
+    /// 画面分割・タブの開け閉めの演出
+    private func transition(_ w: TermWindow, _ t: PaneTransition) {
+        guard w.window.isVisible, !fx.isSummoning else { return }
+        let accent = w.accent.cgColor
+        let white = w.sparklesTinted ? accent : CGColor(gray: 1, alpha: 1)
+        switch t {
+        case let .beam(a, b):
+            fx.add(SplitBeamFX(from: a, to: b, color: accent), near: w.window)
+        case let .poof(img, r):
+            fx.add(PoofFX(image: img, rect: r), near: w.window)
+            for i in 0..<14 {   // 消えていく画面のあちこちから、キラキラがこぼれる
+                let pt = CGPoint(x: CGFloat.random(in: r.minX...r.maxX), y: CGFloat.random(in: r.minY...r.maxY))
+                fx.add(SparkFX(at: pt, color: i % 3 == 0 ? white : accent, burst: true), near: w.window)
+            }
+        case let .sparkle(r):
+            let pt = CGPoint(x: r.midX, y: r.midY)
+            for i in 0..<10 {
+                fx.add(SparkFX(at: pt, color: i % 3 == 0 ? white : accent, burst: true), near: w.window)
+            }
+        }
+    }
+
     private func typeTrail(_ w: TermWindow, _ r: NSRect) {
         guard config.bool("fx.cursor_trail"), w.window.isVisible, !fx.isSummoning else { return }
         let c = w.accent.cgColor
@@ -667,7 +704,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         let wm = NSMenu(title: "Window")
         wm.addItem(menuItem("New Window", #selector(newWindow), "n"))
         wm.addItem(menuItem("New Tab", #selector(newTab), "t"))
-        wm.addItem(menuItem("Close Window", #selector(closeWindow), "w"))
+        wm.addItem(menuItem("Split / Flip Pane", #selector(splitPane), "w"))
         wm.delegate = self
         windowItem.submenu = wm
         main.addItem(windowItem)

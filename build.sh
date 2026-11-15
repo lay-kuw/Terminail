@@ -3,6 +3,7 @@
 #   bash build.sh           ビルドだけ（build/Terminail.app）
 #   bash build.sh install   ビルドして ~/Applications に入れて起動
 #   bash build.sh dmg       ほかの Mac 用の dmg を作る（Apple Silicon 用）
+#   bash build.sh uninstall アプリと、設定・macOS が作ったファイルをまとめて消す
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -10,6 +11,25 @@ NAME="Terminail"
 APP="build/$NAME.app"
 MODE="${1:-}"
 VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Info.plist)
+
+# アンインストール：ビルドはしない。ログファイルは保存場所を自分で選ぶので、ここでは消さない
+if [ "$MODE" = "uninstall" ]; then
+  ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" Info.plist)
+  pkill -x "$NAME" || true
+  sleep 0.5
+  defaults delete "$ID" >/dev/null 2>&1 || true   # macOS がメモリに覚えている分も消す
+  for p in "$HOME/Applications/$NAME.app" "/Applications/$NAME.app" \
+           "$HOME/.config/terminail" \
+           "$HOME/Library/Preferences/$ID.plist" \
+           "$HOME/Library/Saved Application State/$ID.savedState" \
+           "$HOME/Library/Caches/$ID"; do
+    if [ -e "$p" ]; then
+      if rm -rf "$p"; then echo "✦ 削除: $p"; else echo "✗ 消せませんでした: $p" >&2; fi
+    fi
+  done
+  echo "✦ アンインストールしました（ログファイル・通知の許可・ログイン項目は残っています）"
+  exit 0
+fi
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
