@@ -356,6 +356,7 @@ palette = 12=#9AB8FF
 - ✅ Tabs, split panes (up to two per tab), multiple windows, search, logging
 - ✅ Text rewraps when you change the window width or font size (nothing disappears when you make it narrow). While dragging, text stays pinned to the top left, and the padding tidies up when you let go
 - ✅ Long lines wrapped by the window width stay as one line when copied or logged
+- ✅ Answers the usual "what can you do?" questions from apps (XTVERSION, text / background / cursor colors, DECRQM), so tools can tell what Terminail supports
 - 💭 Not yet: mouse reporting, ligatures, inline images (I might add them someday, if I feel like it~)
 
 ## 🫧 Uninstall

@@ -61,6 +61,12 @@ final class Terminal {
 
     var onBell: (() -> Void)?
     var onResponse: ((String) -> Void)?
+    /// XTVERSION（CSI > q）で答える名前とバージョン
+    var version = "Terminail"
+    /// 色の問い合わせ（OSC 10 文字 / 11 背景 / 12 カーソル）に答える色。nil なら答えない
+    var colorFor: ((Int) -> (r: UInt8, g: UInt8, b: UInt8)?)?
+    private var inOSC = false
+    private var oscBuf: [UInt8] = []
     var onScrollIntoHistory: (() -> Void)?
     var onHistoryChanged: (() -> Void)?
     /// 履歴があふれて、古い行が n 行消えた（検索結果の行番号をずらすのに使う）
@@ -458,9 +464,11 @@ final class Terminal {
         case .escSkip: state = .ground
         case .csi: csi(b)
         case .str:
-            if b == 0x1B { state = .strEsc } else if b == 0x07 { state = .ground }
+            if b == 0x1B { state = .strEsc }
+            else if b == 0x07 { state = .ground; if inOSC { osc(bel: true) } }
+            else if inOSC && oscBuf.count < 64 { oscBuf.append(b) }   // 問い合わせは短いので、長い文字列は途中まで
         case .strEsc:
-            if b == 0x5C { state = .ground } else { state = .esc; esc(b) }
+            if b == 0x5C { state = .ground; if inOSC { osc(bel: false) } } else { inOSC = false; state = .esc; esc(b) }
         }
     }
 
@@ -504,7 +512,11 @@ final class Terminal {
             state = .csi
             params.removeAll(keepingCapacity: true)
             cur = -1; priv = 0; inter = 0
-        case 0x5D, 0x50, 0x58, 0x5E, 0x5F: state = .str   // OSC / DCS / SOS / PM / APC は読み飛ばす
+        case 0x5D:                                      // OSC：色の問い合わせにだけ答える（タイトル変更などは無視）
+            state = .str
+            inOSC = true
+            oscBuf.removeAll(keepingCapacity: true)
+        case 0x50, 0x58, 0x5E, 0x5F: state = .str; inOSC = false   // DCS / SOS / PM / APC は読み飛ばす
         case 0x20...0x2F: state = .escSkip              // ESC ( B など
         case 0x37: saveCursor()                         // 7
         case 0x38: restoreCursor()                      // 8
@@ -539,11 +551,13 @@ final class Terminal {
 
     private func dispatch(_ f: UInt8) {
         if priv == 0x3F { // ?
+            if inter == 0x24 && f == 0x70 { reportMode(p0(0)); return }   // DECRQM（? Ps $ p）：モードの状態を答える
             if f == 0x68 || f == 0x6C { for m in params where m >= 0 { privMode(m, f == 0x68) } }
             return
         }
         if priv != 0 {
             if priv == 0x3E && f == 0x63 { onResponse?("\u{1b}[>0;10;1c") }
+            if priv == 0x3E && f == 0x71 && inter == 0 { onResponse?("\u{1b}P>|\(version)\u{1b}\\") }   // XTVERSION
             return
         }
         if inter != 0 {
@@ -584,6 +598,31 @@ final class Terminal {
         case 0x63: onResponse?("\u{1b}[?62;22c")                            // c
         default: break
         }
+    }
+
+    /// DECRQM の答え：1 = オン、2 = オフ、0 = 知らないモード
+    private func reportMode(_ m: Int) {
+        let on: Bool?
+        switch m {
+        case 1: on = appCursor
+        case 7: on = autowrap
+        case 25: on = cursorVisible
+        case 47, 1047, 1049: on = isAlt
+        case 2004: on = bracketedPaste
+        default: on = nil
+        }
+        onResponse?("\u{1b}[?\(m);\(on.map { $0 ? 1 : 2 } ?? 0)$y")
+    }
+
+    /// OSC 10 / 11 / 12 の「?」（文字・背景・カーソルの色の問い合わせ）に、問い合わせと同じ終わり方で答える
+    private func osc(bel: Bool) {
+        inOSC = false
+        guard let s = String(bytes: oscBuf, encoding: .utf8) else { return }
+        let parts = s.split(separator: ";", omittingEmptySubsequences: false)
+        guard parts.count == 2, parts[1] == "?", let code = Int(parts[0]), (10...12).contains(code),
+              let c = colorFor?(code) else { return }
+        func hex(_ v: UInt8) -> String { String(format: "%04x", Int(v) * 257) }
+        onResponse?("\u{1b}]\(code);rgb:\(hex(c.r))/\(hex(c.g))/\(hex(c.b))" + (bel ? "\u{07}" : "\u{1b}\\"))
     }
 
     private func privMode(_ m: Int, _ on: Bool) {

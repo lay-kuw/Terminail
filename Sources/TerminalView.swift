@@ -337,6 +337,17 @@ final class TerminalView: NSView, NSTextInputClient {
         super.init(frame: frame)
         term.onBell = { [weak self] in self?.onBell?() }
         term.onResponse = { [weak self] s in self?.pty.write(s) }
+        let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+        term.version = "Terminail \(ver)"
+        term.colorFor = { [weak self] code in
+            guard let self else { return nil }
+            let c = code == 10 ? self.fg : code == 11 ? self.bgSolid : self.cursorColor
+            guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+                  let comp = c.converted(to: space, intent: .defaultIntent, options: nil)?.components,
+                  comp.count >= 3 else { return nil }
+            func u8(_ v: CGFloat) -> UInt8 { UInt8(max(0, min(255, (v * 255).rounded()))) }
+            return (u8(comp[0]), u8(comp[1]), u8(comp[2]))
+        }
         term.onScrollIntoHistory = { [weak self] in
             guard let self, self.viewOffset > 0 else { return }
             self.viewOffset = min(self.viewOffset + 1, self.term.scrollback.count)
