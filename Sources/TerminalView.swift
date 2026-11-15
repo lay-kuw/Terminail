@@ -1388,15 +1388,18 @@ final class TerminalView: NSView, NSTextInputClient {
     }
 
     // MARK: - メニューから呼ばれる操作
+    //
+    // Edit メニューは macOS 標準の copy: / paste: を送る。ターミナルではここで受け、
+    // 保存ダイアログや検索窓などの入力欄では、その入力欄が受ける
 
-    @objc func doCopy(_ sender: Any?) {
+    @objc func copy(_ sender: Any?) {
         guard let s = orderedSel() else { return }
         let text = term.text(from: s.0, to: s.1)
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
     }
 
-    @objc func doPaste(_ sender: Any?) {
+    @objc func paste(_ sender: Any?) {
         guard var s = NSPasteboard.general.string(forType: .string) else { return }
         s = s.replacingOccurrences(of: "\r\n", with: "\r").replacingOccurrences(of: "\n", with: "\r")
         // 貼り付けた文字の中に「貼り付け終わり」の合図が仕込まれていると、そこから先がコマンドとして実行されてしまうので取り除く

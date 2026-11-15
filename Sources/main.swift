@@ -278,7 +278,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         guard let w = keyTermWindow else { return }
         let panel = NSSavePanel()
         let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd HH.mm"
+        f.dateFormat = "yyyy-MM-dd HH-mm"
         panel.nameFieldStringValue = "Terminail \(f.string(from: Date())).log"
         panel.canCreateDirectories = true
         panel.beginSheetModal(for: w.window) { [weak w] res in
@@ -298,7 +298,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         switch item.action {
         case #selector(newLog): return keyTermWindow.map { !$0.isLogging } ?? false
         case #selector(stopLog): return keyTermWindow?.isLogging ?? false
-        case #selector(find), #selector(splitPane): return keyTermWindow != nil
+        case #selector(find): return keyTermWindow != nil
         default: return true
         }
     }
@@ -336,7 +336,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         if let w = keyTermWindow { w.newTab() } else { newWindow() }
     }
 
-    /// ⌘] / ⌘[ で画面とタブの切り替え、⌘+ / ⌘- / ⌘0 で文字サイズ、⌘K で履歴を消す（メニューには出さない）
+    /// ⌘] / ⌘[ で画面とタブの切り替え、⌘W で画面分割、⌘+ / ⌘- / ⌘0 で文字サイズ、⌘K で履歴を消す（メニューには出さない）
     private func watchTabKeys() {
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
             guard let self,
@@ -345,6 +345,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             switch e.charactersIgnoringModifiers {
             case "]": w.selectNext(); return nil
             case "[": w.selectPrevious(); return nil
+            case "w": w.splitOrFlip(); return nil
             case "=", "+", ";": w.zoom(1); return nil
             case "-": w.zoom(-1); return nil
             case "0": w.zoom(0); return nil
@@ -363,13 +364,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private func windowClosed(_ w: TermWindow) {
         windows.removeAll { $0 === w }
         hidden.removeAll { $0 === w }
-        if windows.isEmpty { NSApp.terminate(nil) }
-    }
-
-    /// ⌘W：いまのタブを2つの画面に分ける。分けていれば、左右と上下を入れ替える
-    /// （ウィンドウを閉じるのは赤ボタン、または最後の画面で exit）
-    @objc func splitPane() {
-        keyTermWindow?.splitOrFlip()
+        guard windows.isEmpty else { return }
+        // 最後のウィンドウ：消えていく演出が動いていれば、見届けてから終わる
+        if fx.isBusy {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { NSApp.terminate(nil) }
+        } else {
+            NSApp.terminate(nil)
+        }
     }
 
     private func applyConfig() {
@@ -656,7 +657,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         return item
     }
 
-    private let fixedWindowItems = 3
+    private let fixedWindowItems = 2
 
     /// Window メニューを開くたびに、今のウィンドウの一覧で作り直す
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -704,7 +705,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         let wm = NSMenu(title: "Window")
         wm.addItem(menuItem("New Window", #selector(newWindow), "n"))
         wm.addItem(menuItem("New Tab", #selector(newTab), "t"))
-        wm.addItem(menuItem("Split / Flip Pane", #selector(splitPane), "w"))
         wm.delegate = self
         windowItem.submenu = wm
         main.addItem(windowItem)
@@ -712,8 +712,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
         let editItem = NSMenuItem()
         let edit = NSMenu(title: "Edit")
-        edit.addItem(NSMenuItem(title: "Copy", action: #selector(TerminalView.doCopy(_:)), keyEquivalent: "c"))
-        edit.addItem(NSMenuItem(title: "Paste", action: #selector(TerminalView.doPaste(_:)), keyEquivalent: "v"))
+        // macOS 標準の命令（入力欄でもそのまま効く）。ターミナルが受けないもの（Cut など）は、ターミナルでは押せない
+        edit.addItem(NSMenuItem(title: "Undo", action: Selector(("undo:")), keyEquivalent: "z"))
+        edit.addItem(NSMenuItem(title: "Redo", action: Selector(("redo:")), keyEquivalent: "Z"))
+        edit.addItem(.separator())
+        edit.addItem(NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x"))
+        edit.addItem(NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
+        edit.addItem(NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
+        edit.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
         edit.addItem(.separator())
         edit.addItem(menuItem("Find…", #selector(find), "f"))
         edit.addItem(.separator())

@@ -54,6 +54,8 @@ final class FX {
 
     var isSummoning: Bool { items.contains { $0 is SummonFX } }
     var isShaking: Bool { items.contains { $0 is ShakeFX } }
+    /// 何か演出が動いているか（アプリを終わる前に、消えていく演出を見届けるため）
+    var isBusy: Bool { !items.isEmpty }
 
     func add(_ item: FXItem, near win: NSWindow) {
         items.append(item)

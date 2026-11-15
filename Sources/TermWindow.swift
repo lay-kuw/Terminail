@@ -466,6 +466,8 @@ final class TermWindow: NSObject, NSWindowDelegate {
     private func tabExited(_ t: Tab) {
         guard !closing, let i = tabs.firstIndex(where: { $0 === t }) else { return }
         if tabs.count == 1 {
+            // 最後の画面：ウィンドウごと、カードになってキラキラと消えていく
+            if animates, let snap = snapshot(t.container) { onTransition?(self, .poof(snap.image, snap.rect)) }
             window.close()
             return
         }
