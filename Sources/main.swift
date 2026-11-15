@@ -712,14 +712,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
         let editItem = NSMenuItem()
         let edit = NSMenu(title: "Edit")
-        // macOS 標準の命令（入力欄でもそのまま効く）。ターミナルが受けないもの（Cut など）は、ターミナルでは押せない
-        edit.addItem(NSMenuItem(title: "Undo", action: Selector(("undo:")), keyEquivalent: "z"))
-        edit.addItem(NSMenuItem(title: "Redo", action: Selector(("redo:")), keyEquivalent: "Z"))
-        edit.addItem(.separator())
-        edit.addItem(NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x"))
+        // macOS 標準の命令（入力欄でもそのまま効く）。
+        // Undo / Redo / Cut / Select All はメニューには出さず、入力欄でのショートカットだけ効かせる
+        func hidden(_ title: String, _ action: Selector, _ key: String) -> NSMenuItem {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            item.isHidden = true
+            item.allowsKeyEquivalentWhenHidden = true
+            return item
+        }
+        edit.addItem(hidden("Undo", Selector(("undo:")), "z"))
+        edit.addItem(hidden("Redo", Selector(("redo:")), "Z"))
+        edit.addItem(hidden("Cut", #selector(NSText.cut(_:)), "x"))
         edit.addItem(NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
         edit.addItem(NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
-        edit.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
+        edit.addItem(hidden("Select All", #selector(NSText.selectAll(_:)), "a"))
         edit.addItem(.separator())
         edit.addItem(menuItem("Find…", #selector(find), "f"))
         edit.addItem(.separator())
