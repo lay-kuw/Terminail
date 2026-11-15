@@ -583,9 +583,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 let pt = CGPoint(x: CGFloat.random(in: r.minX...r.maxX), y: CGFloat.random(in: r.minY...r.maxY))
                 fx.add(SparkFX(at: pt, color: i % 3 == 0 ? white : accent, burst: true), near: w.window)
             }
-        case let .sparkle(r):
+        case let .sparkle(r, n):
             let pt = CGPoint(x: r.midX, y: r.midY)
-            for i in 0..<10 {
+            for i in 0..<n {
                 fx.add(SparkFX(at: pt, color: i % 3 == 0 ? white : accent, burst: true), near: w.window)
             }
         }

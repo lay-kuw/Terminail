@@ -5,7 +5,7 @@ import QuartzCore
 enum PaneTransition {
     case beam(from: CGPoint, to: CGPoint)    // 分割の線が光ってのびる
     case poof(CGImage, NSRect)               // 閉じた画面の最後の姿が消えていく
-    case sparkle(NSRect)                     // タブバーのタブからキラキラ
+    case sparkle(NSRect, count: Int)         // タブバーのタブからキラキラ
 }
 
 /// 画面1つぶん（ターミナル本体と、いま前面で動いているコマンド）
@@ -229,7 +229,7 @@ final class TermWindow: NSObject, NSWindowDelegate {
         tint.wantsLayer = true
         tabBar.autoresizingMask = [.width, .minYMargin]
         tabBar.isHidden = true
-        tabBar.onSelect = { [weak self] i in self?.select(i) }
+        tabBar.onSelect = { [weak self] i in self?.switchTab(i) }
         box.addSubview(effect)
         box.addSubview(tint)
         box.addSubview(tabBar)
@@ -344,12 +344,21 @@ final class TermWindow: NSObject, NSWindowDelegate {
         if animates {   // 中身はふわっと現れて、タブバーのタブはぽよんと弾む
             fadeIn(t.container, duration: 0.25)
             tabBar.pop(active)
-            if let r = pillScreenRect(active) { onTransition?(self, .sparkle(r)) }
+            if let r = pillScreenRect(active) { onTransition?(self, .sparkle(r, count: 10)) }
         }
     }
 
     func select(tab t: Tab) {
-        if let i = tabs.firstIndex(where: { $0 === t }) { select(i) }
+        if let i = tabs.firstIndex(where: { $0 === t }) { switchTab(i) }
+    }
+
+    /// 別のタブに移る（⌘[ ⌘]・タブバーのクリック・通知から）。移った先のタブが小さく弾んで、キラキラ
+    private func switchTab(_ i: Int, pane: Int? = nil) {
+        let changed = i != active
+        select(i, pane: pane)
+        guard changed, animates else { return }
+        tabBar.pop(i, strength: 0.18)
+        if let r = pillScreenRect(i) { onTransition?(self, .sparkle(r, count: 5)) }
     }
 
     /// タブ i の画面 pane を選ぶ（pane が nil なら、そのタブで前に選んでいた画面）
@@ -371,7 +380,7 @@ final class TermWindow: NSObject, NSWindowDelegate {
         let t = tabs[active]
         if t.focus < t.panes.count - 1 { select(active, pane: t.focus + 1); return }
         guard tabs.count > 1 || t.isSplit else { return }
-        select((active + 1) % tabs.count, pane: 0)
+        switchTab((active + 1) % tabs.count, pane: 0)
     }
 
     /// ⌘[：selectNext の逆向き
@@ -380,7 +389,7 @@ final class TermWindow: NSObject, NSWindowDelegate {
         if t.focus > 0 { select(active, pane: t.focus - 1); return }
         guard tabs.count > 1 || t.isSplit else { return }
         let j = (active - 1 + tabs.count) % tabs.count
-        select(j, pane: tabs[j].panes.count - 1)
+        switchTab(j, pane: tabs[j].panes.count - 1)
     }
 
     /// 前に出すタブだけをウィンドウに入れる（ほかのタブはシェルを動かしたまま裏で待機）
@@ -464,7 +473,7 @@ final class TermWindow: NSObject, NSWindowDelegate {
         if wasActive { closeSearch(refocus: false) }
         if animates {   // 見ていたタブなら中身が消えていき、タブバーのタブがあった場所からキラキラ
             if wasActive, let snap = snapshot(t.container) { onTransition?(self, .poof(snap.image, snap.rect)) }
-            if let r = pillScreenRect(i) { onTransition?(self, .sparkle(r)) }
+            if let r = pillScreenRect(i) { onTransition?(self, .sparkle(r, count: 10)) }
         }
         tabs.remove(at: i)
         t.container.removeFromSuperview()
@@ -660,7 +669,7 @@ final class TermWindow: NSObject, NSWindowDelegate {
         let h = 28 + extra
         tabBar.frame = NSRect(x: 0, y: box.bounds.height - h, width: box.bounds.width, height: h)
         for t in tabs {
-            for p in t.panes { p.view.extraTop = extra }
+            for p in t.panes { p.view.extraTop = extra; p.view.tabBarShown = visible }
             t.container.needsDisplay = true
         }
         if visible { refreshNames() }
@@ -865,14 +874,17 @@ final class TabBarView: NSView {
 
     private var pulse: CGFloat { CGFloat(0.5 + 0.5 * sin(CACurrentMediaTime() * 4.5)) }
 
-    // 新しいタブが、ぽよんと弾んで出てくる
+    // 新しいタブはぽよんと大きく、移った先のタブは小さく弾む
     private var popIndex = -1
     private var popStart: CFTimeInterval = 0
+    private var popStrength: CGFloat = 0.5
     private var popTimer: Timer?
     private static let popDuration = 0.5
 
-    func pop(_ i: Int) {
+    /// strength：弾む大きさ（0.5 なら半分の大きさから、0.18 なら少しだけ縮んだところから）
+    func pop(_ i: Int, strength: CGFloat = 0.5) {
         popIndex = i
+        popStrength = strength
         popStart = CACurrentMediaTime()
         guard popTimer == nil else { return }
         let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] timer in
@@ -888,11 +900,11 @@ final class TabBarView: NSView {
         popTimer = t
     }
 
-    /// 弾んでいるタブの大きさ（0.5 から、少し大きくなりすぎて、1 に落ち着くばね）
+    /// 弾んでいるタブの大きさ（縮んだところから、少し大きくなりすぎて、1 に落ち着くばね）
     private func popScale(_ i: Int) -> CGFloat {
         guard i == popIndex else { return 1 }
         let t = CACurrentMediaTime() - popStart
-        return CGFloat(1 - 0.5 * exp(-7 * t) * cos(11 * t))
+        return 1 - popStrength * CGFloat(exp(-7 * t) * cos(11 * t))
     }
 
     /// タブ i を、弾み具合に合わせて縮めたり広げたりして描く

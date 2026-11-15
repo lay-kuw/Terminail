@@ -27,6 +27,8 @@ final class TerminalView: NSView, NSTextInputClient {
 
     /// 信号ボタンとタブバーのぶん、上にとっている高さ（下の画面なら 0）
     var chromeHeight: CGFloat { chromeTop ? 28 + extraTop : 0 }
+    /// タブバーが出ているか（出ていれば、記録中の赤い点をタブバーの下に置く）
+    var tabBarShown = false { didSet { if tabBarShown != oldValue { needsDisplay = true } } }
 
     /// 分割しているとき、いま操作している画面か。false なら少し暗く描いて、カーソルは枠だけにする
     var isActivePane = true {
@@ -634,7 +636,9 @@ final class TerminalView: NSView, NSTextInputClient {
         if isLogging {   // 記録中は右上に小さな赤い点
             let red = palette.count > 1 ? palette[1] : CGColor(srgbRed: 0.97, green: 0.46, blue: 0.56, alpha: 1)
             ctx.setFillColor(red)
-            ctx.fillEllipse(in: CGRect(x: bounds.maxX - 18, y: 11, width: 7, height: 7))
+            // 上の余白があいていれば信号ボタンの行に。タブバーがあるときや下の画面では、そのすぐ下に
+            let y: CGFloat = chromeTop && !tabBarShown ? 11 : chromeHeight + 4
+            ctx.fillEllipse(in: CGRect(x: bounds.maxX - 18, y: y, width: 7, height: 7))
         }
         if !isActivePane {   // 分割中に操作していない画面は、背景の色を薄く重ねて少し暗く
             // 塗るのは自分の bounds の中だけ。macOS 14 以降、dirtyRect はビューの外まで広がることがあり、
