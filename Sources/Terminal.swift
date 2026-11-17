@@ -56,6 +56,10 @@ final class Terminal {
     private(set) var cursorVisible = true
     private(set) var appCursor = false
     private(set) var bracketedPaste = false
+    /// アプリがマウスの操作を受け取りたがっている（1000/1002/1003）。ホイールはアプリに送る
+    private(set) var mouseTracking = false
+    /// マウスの知らせを SGR の形（1006）で送る
+    private(set) var sgrMouse = false
     private var autowrap = true
     private var lastChar: UInt32 = 32
 
@@ -609,6 +613,8 @@ final class Terminal {
         case 25: on = cursorVisible
         case 47, 1047, 1049: on = isAlt
         case 2004: on = bracketedPaste
+        case 1000, 1002, 1003: on = mouseTracking
+        case 1006: on = sgrMouse
         default: on = nil
         }
         onResponse?("\u{1b}[?\(m);\(on.map { $0 ? 1 : 2 } ?? 0)$y")
@@ -634,6 +640,8 @@ final class Terminal {
         case 1049:
             if on { saveCursor(); enterAlt() } else { exitAlt(); restoreCursor() }
         case 2004: bracketedPaste = on
+        case 1000, 1002, 1003: mouseTracking = on
+        case 1006: sgrMouse = on
         default: break
         }
     }
@@ -901,6 +909,8 @@ final class Terminal {
         cx = 0
         cy = 0
         bracketedPaste = false
+        mouseTracking = false
+        sgrMouse = false
         state = .ground
         u8need = 0
     }

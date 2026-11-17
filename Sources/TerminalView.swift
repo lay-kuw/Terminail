@@ -40,6 +40,16 @@ final class TerminalView: NSView, NSTextInputClient {
     }
     /// クリックなどで、キー入力がこの画面に移った
     var onFocus: (() -> Void)?
+
+    /// この画面の目印。hooks からの知らせが、どの画面のものかを見分けるのに使う（シェルに TERMINAIL_PANE で渡す）
+    let paneID = UUID().uuidString
+
+    /// いま画面に出ている、下から n 行の文字（AI の様子を推測するのに使う）
+    func screenLines(_ n: Int) -> [String] {
+        let sb = term.scrollback.count
+        let first = max(0, term.rows - n)
+        return (first..<term.rows).compactMap { r in term.line(sb + r).map { Terminal.plain($0) } }
+    }
     private var balance = false     // 余ったすき間を上下左右に均等に振り分ける（padding-balance）
     private var balX: CGFloat = 0
     private var balY: CGFloat = 0
@@ -481,7 +491,8 @@ final class TerminalView: NSView, NSTextInputClient {
         // バージョンは Info.plist に書いたものをそのまま使う（2か所に書かない）
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
         var env = ["TERM": "xterm-256color", "COLORTERM": "truecolor",
-                   "TERM_PROGRAM": "Terminail", "TERM_PROGRAM_VERSION": version]
+                   "TERM_PROGRAM": "Terminail", "TERM_PROGRAM_VERSION": version,
+                   "TERMINAIL_PANE": paneID]
         if ProcessInfo.processInfo.environment["LANG"] == nil {
             env["LANG"] = (Locale.preferredLanguages.first ?? "").hasPrefix("ja") ? "ja_JP.UTF-8" : "en_US.UTF-8"
         }
@@ -1367,6 +1378,24 @@ final class TerminalView: NSView, NSTextInputClient {
     }
 
     override func scrollWheel(with e: NSEvent) {
+        // AI エージェントなどがマウスの操作を受け取りたがっているときは、ホイールをそのアプリに送る
+        // （アプリが自分の画面の中をスクロールする。ふつうのターミナルと同じ動き）
+        if term.mouseTracking {
+            let dy = e.hasPreciseScrollingDeltas ? e.scrollingDeltaY / cellH : e.scrollingDeltaY
+            scrollAccum += dy
+            let lines = Int(scrollAccum)
+            guard lines != 0 else { return }
+            scrollAccum -= CGFloat(lines)
+            let p = convert(e.locationInWindow, from: nil)
+            let row = max(1, min(term.rows, Int((p.y - gy + shiftUp) / cellH) + 1))
+            let col = max(1, min(term.cols, Int((p.x - gx) / cellW) + 1))
+            let button = lines > 0 ? 64 : 65                 // 上へ / 下へ
+            let one = term.sgrMouse ? "\u{1b}[<\(button);\(col);\(row)M"
+                : "\u{1b}[M" + String(UnicodeScalar(UInt8(min(255, 32 + button)))) + String(UnicodeScalar(UInt8(min(255, 32 + col))))
+                  + String(UnicodeScalar(UInt8(min(255, 32 + row))))
+            pty.write(String(repeating: one, count: min(Swift.abs(lines), 10)))
+            return
+        }
         // スムーズスクロールは、1行未満の細かい動きもそのまま使う（整数の行にまとめる前に分ける）
         if smoothScroll && !term.isAlt {
             scrollAccum = 0

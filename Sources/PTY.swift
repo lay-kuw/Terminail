@@ -194,6 +194,33 @@ extension PTY {
         return name.isEmpty ? nil : name
     }
 
+    /// 前面のプロセスの引数（先頭の4つまで）。node で動く AI を、スクリプトの名前で見分けるのに使う
+    var foregroundArgs: [String] {
+        guard fd >= 0, pid > 0 else { return [] }
+        let pg = tcgetpgrp(fd)
+        guard pg > 0, pg != pid else { return [] }
+        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pg]
+        var size = 0
+        guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else { return [] }
+        var buf = [UInt8](repeating: 0, count: size)
+        guard sysctl(&mib, 3, &buf, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else { return [] }
+        // 先頭に引数の数、続いて実行ファイルのパス、0 の詰め物、引数が 0 区切りで並ぶ
+        let argc = Int(buf.withUnsafeBytes { $0.load(as: Int32.self) })
+        var i = MemoryLayout<Int32>.size
+        while i < size && buf[i] != 0 { i += 1 }
+        while i < size && buf[i] == 0 { i += 1 }
+        var args: [String] = []
+        var start = i
+        while i < size && args.count < min(argc, 4) {
+            if buf[i] == 0 {
+                args.append(String(decoding: buf[start..<i], as: UTF8.self))
+                start = i + 1
+            }
+            i += 1
+        }
+        return args
+    }
+
     /// シェルのいるフォルダ（ホームは ~ で）
     var currentDirectory: String? {
         guard pid > 0 else { return nil }

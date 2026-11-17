@@ -91,6 +91,8 @@ final class Config {
         "idle-effect": "fx.idle", "idle-after": "fx.idle_after",
         "tab-style": "tabs.style", "tab-icons": "tabs.icons", "tab-bar": "tabs.bar",
         "split-direction": "split.direction",
+        "agent-mode": "agent.mode", "agent-icon-claude": "agent.icon_claude",
+        "agent-icon-codex": "agent.icon_codex", "agent-icon-antigravity": "agent.icon_antigravity",
         "command": "shell.program", "scrollback-limit": "shell.scrollback", "macos-option-as-alt": "shell.option_as_meta",
     ]
 
@@ -223,6 +225,14 @@ final class Config {
     # left-right (side by side) / top-bottom (stacked)
     split-direction = left-right
 
+    # AI mode (⌘\\): tabs line up on the left and show what each AI agent is doing
+    # (Claude Code, Codex, Antigravity CLI). Start in AI mode?
+    agent-mode = false
+    # Your own icon for each agent (an image file). Leave empty for the built-in name badges
+    # agent-icon-claude = ~/Pictures/claude.png
+    # agent-icon-codex = ~/Pictures/codex.png
+    # agent-icon-antigravity = ~/Pictures/antigravity.png
+
     # Tell you when a long command finishes (only for tabs and windows you aren't looking at)
     # toast (small, top right) / system (macOS notification) / dock (Dock bounce) / tab (glowing tab icon) / off
     # Combine as many as you like (e.g. notify = toast, tab)
@@ -286,6 +296,10 @@ final class Config {
     tab-bar = auto
     tab-colors = edge
     split-direction = left-right
+    agent-mode = false
+    agent-icon-claude =
+    agent-icon-codex =
+    agent-icon-antigravity =
     smooth-scroll = true
     notify = toast, dock, tab
     notify-after = 10

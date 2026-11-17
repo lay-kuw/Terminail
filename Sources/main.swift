@@ -130,6 +130,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private let toaster = Toaster()
     private var badgeCount = 0
     private var askedNotify = false
+    /// AI モード（⌘\）。全部のウィンドウで同じ
+    private var agentMode = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // すでに Terminail が動いていたら、そっちのウィンドウを出してもらって自分は終わる（ホットキーの取り合いを防ぐ）
@@ -148,6 +150,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         registerHotKey()
         watchConfig()
         watchTabKeys()
+        agentMode = config.bool("agent.mode")
+        // AI の hooks からの知らせ（`Terminail --hook …` が送ってくる）。裏にいるときも、すぐ受け取る
+        DistributedNotificationCenter.default().addObserver(self, selector: #selector(agentHook(_:)), name: AgentHookEvent.name,
+                                                            object: nil, suspensionBehavior: .deliverImmediately)
+        if AgentHooks.consent == "on" { AgentHooks.install() }   // アプリの場所が変わっていても、hooks がここを指すように
         newWindow()
         launched = true
     }
@@ -299,8 +306,114 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(newLog): return keyTermWindow.map { !$0.isLogging } ?? false
         case #selector(stopLog): return keyTermWindow?.isLogging ?? false
         case #selector(find): return keyTermWindow != nil
+        case #selector(toggleAgentMode):
+            item.state = agentMode ? .on : .off
+            return true
         default: return true
         }
+    }
+
+    // MARK: - AI エージェント
+
+    /// ⌘\：AI モード（タブが左に縦に並ぶ）と通常モードを切り替える
+    @objc func toggleAgentMode(_ sender: Any?) {
+        agentMode.toggle()
+        windows.forEach { $0.setAgentMode(agentMode) }
+        if agentMode { askHooksIfNeeded() }
+    }
+
+    /// 初めて AI モードにしたとき、AI の設定に hooks を足してよいか一度だけ聞く
+    private func askHooksIfNeeded() {
+        guard AgentHooks.consent == nil, let w = keyTermWindow ?? windows.first, w.window.isVisible else { return }
+        let a = NSAlert()
+        a.messageText = "Let Terminail see what your AI agents are doing?"
+        a.informativeText = """
+            Terminail can add small hooks to Claude Code, Codex and Antigravity CLI, \
+            so it knows right away when one is thinking, done, or needs your OK.
+
+            Your other settings stay as they are, and a backup is saved next to each file. \
+            Without hooks, Terminail guesses from what is on the screen.
+            """
+        a.addButton(withTitle: "Add Hooks")
+        a.addButton(withTitle: "Not Now")
+        a.beginSheetModal(for: w.window) { r in
+            let yes = r == .alertFirstButtonReturn
+            AgentHooks.consent = yes ? "on" : "off"
+            if yes { AgentHooks.install() }
+        }
+    }
+
+    /// hooks からの知らせを、その画面があるウィンドウに渡す
+    @objc private func agentHook(_ n: Notification) {
+        guard let info = n.userInfo, let e = AgentHookEvent(info) else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            for w in self.windows where w.handleHook(e) { break }
+        }
+    }
+
+    /// AI の様子が変わった：承認待ちはトースト（承認・拒否のボタン付き）、完了は知らせる設定ならトースト
+    private func agentStatus(_ w: TermWindow, _ t: Tab, _ p: Pane, _ s: AgentStatus) {
+        let key = p.view.paneID
+        if s != .approval { toaster.dismiss(key: key) }
+        updateAgentBadge()
+        guard let a = p.agent else { return }
+        // いままさにその AI を見ているなら、トーストは出さない
+        let looking = NSApp.isActive && w.window.isKeyWindow && w.window.isVisible && (w.agentMode || w.isShowing(t))
+        guard !looking else { return }
+        let c = Colors(config)
+        switch s {
+        case .approval:
+            let text = "\(t.name) needs you" + (a.request.isEmpty ? "" : " · " + String(a.request.prefix(48)))
+            toaster.show(icon: w.iconText(t), iconColor: s.color(c.palette), text: text, fg: c.foreground, bg: c.background,
+                         near: w.window,
+                         actions: [ToastAction(title: "Approve", primary: true) { [weak w] in w?.answer(paneID: key, yes: true) },
+                                   ToastAction(title: "Deny", primary: false) { [weak w] in w?.answer(paneID: key, yes: false) }],
+                         key: key) { [weak self, weak w, weak t] in
+                guard let w, let t else { return }
+                self?.focus(w, t)
+            }
+        case .done where Set(config.strings("notify.style")).contains("toast"):
+            toaster.show(icon: w.iconText(t), iconColor: s.color(c.palette), text: "\(t.name) · \(a.kind.title) is done \(s.face)",
+                         fg: c.foreground, bg: c.background, near: w.window) { [weak self, weak w, weak t] in
+                guard let w, let t else { return }
+                self?.focus(w, t)
+            }
+        default:
+            break
+        }
+    }
+
+    /// 裏にいるあいだ、Dock のアイコンに承認待ちの数を出す
+    private func updateAgentBadge() {
+        guard !NSApp.isActive else { return }
+        let n = windows.reduce(0) { $0 + $1.pendingApprovals }
+        NSApp.dockTile.badgeLabel = n > 0 ? "\(n)" : (badgeCount > 0 ? "\(badgeCount)" : nil)
+    }
+
+    /// 赤ボタンで閉じようとしたが、AI が動いている：閉じずに隠して、セッションを続ける
+    private func hideInstead(_ w: TermWindow) {
+        w.closePeek()
+        w.window.orderOut(nil)
+        if !hidden.contains(where: { $0 === w }) { hidden.append(w) }
+        if !windows.contains(where: { $0.window.isVisible }) { NSApp.hide(nil) }
+        let c = Colors(config)
+        toaster.show(icon: "✦", iconColor: c.cursor, text: "AI agents keep working in the background",
+                     fg: c.foreground, bg: c.background, near: w.window) { [weak self] in self?.showAll() }
+    }
+
+    /// ⌘Q：AI が動いていれば、止めてよいか確かめる
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let n = windows.reduce(0) { $0 + $1.runningAgents }
+        guard n > 0 else { return .terminateNow }
+        let a = NSAlert()
+        a.messageText = "Quit Terminail?"
+        a.informativeText = n == 1 ? "An AI agent is still running. Quitting stops it."
+                                   : "\(n) AI agents are still running. Quitting stops them."
+        a.addButton(withTitle: "Quit")
+        a.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        return a.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
     }
 
     // MARK: - ウィンドウを作る
@@ -315,6 +428,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         w.onTransition = { [weak self] w, t in self?.transition(w, t) }
         w.onClosed = { [weak self] w in self?.windowClosed(w) }
         w.onCommandFinished = { [weak self] w, t, cmd, took in self?.commandFinished(w, t, cmd, took) }
+        w.onAgentStatus = { [weak self] w, t, p, s in self?.agentStatus(w, t, p, s) }
+        w.onHideInsteadOfClose = { [weak self] w in self?.hideInstead(w) }
+        w.setAgentMode(agentMode)
         return w
     }
 
@@ -350,6 +466,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             case "-": w.zoom(-1); return nil
             case "0": w.zoom(0); return nil
             case "k": w.clearScrollback(); return nil
+            case "l": w.togglePeek(); return nil
+            case "\\", "¥": self.toggleAgentMode(nil); return nil   // 日本語キーボードの ¥ キーでも
             default: return e
             }
         }
@@ -584,10 +702,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 let pt = CGPoint(x: CGFloat.random(in: r.minX...r.maxX), y: CGFloat.random(in: r.minY...r.maxY))
                 fx.add(SparkFX(at: pt, color: i % 3 == 0 ? white : accent, burst: true), near: w.window)
             }
-        case let .sparkle(r, n):
+        case let .sparkle(r, n, tint):
             let pt = CGPoint(x: r.midX, y: r.midY)
+            let main = tint?.cgColor ?? accent
             for i in 0..<n {
-                fx.add(SparkFX(at: pt, color: i % 3 == 0 ? white : accent, burst: true), near: w.window)
+                fx.add(SparkFX(at: pt, color: i % 3 == 0 ? white : main, burst: true), near: w.window)
             }
         }
     }
@@ -657,7 +776,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         return item
     }
 
-    private let fixedWindowItems = 2
+    private let fixedWindowItems = 3
 
     /// Window メニューを開くたびに、今のウィンドウの一覧で作り直す
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -705,6 +824,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         let wm = NSMenu(title: "Window")
         wm.addItem(menuItem("New Window", #selector(newWindow), "n"))
         wm.addItem(menuItem("New Tab", #selector(newTab), "t"))
+        wm.addItem(menuItem("AI Mode", #selector(toggleAgentMode), "\\"))
         wm.delegate = self
         windowItem.submenu = wm
         main.addItem(windowItem)
@@ -754,6 +874,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         updateSecureInput()
     }
 }
+
+// hooks から `Terminail --hook …` として呼ばれたときは、知らせを送ってすぐ終わる（ウィンドウは出さない）
+if let code = HookCLI.run(CommandLine.arguments) { exit(code) }
 
 let app = NSApplication.shared
 let delegate = AppDelegate()

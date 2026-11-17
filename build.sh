@@ -17,6 +17,10 @@ if [ "$MODE" = "uninstall" ]; then
   ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" Info.plist)
   pkill -x "$NAME" || true
   sleep 0.5
+  # AI モードで足した hooks を、AI の設定から外す（ほかの設定はそのまま）
+  for a in "$HOME/Applications/$NAME.app" "/Applications/$NAME.app"; do
+    if [ -x "$a/Contents/MacOS/$NAME" ]; then "$a/Contents/MacOS/$NAME" --uninstall-hooks || true; fi
+  done
   defaults delete "$ID" >/dev/null 2>&1 || true   # macOS がメモリに覚えている分も消す
   for p in "$HOME/Applications/$NAME.app" "/Applications/$NAME.app" \
            "$HOME/.config/terminail" \

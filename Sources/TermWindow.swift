@@ -5,7 +5,7 @@ import QuartzCore
 enum PaneTransition {
     case beam(from: CGPoint, to: CGPoint)    // 分割の線が光ってのびる
     case poof(CGImage, NSRect)               // 閉じた画面の最後の姿が消えていく
-    case sparkle(NSRect, count: Int)         // タブバーのタブからキラキラ
+    case sparkle(NSRect, count: Int, color: NSColor? = nil)   // タブからキラキラ（色を決めなければ、いつもの色）
 }
 
 /// 画面1つぶん（ターミナル本体と、いま前面で動いているコマンド）
@@ -13,6 +13,7 @@ final class Pane {
     let view: TerminalView
     var running: String?              // いま前面で動いているコマンド
     var startedAt: CFTimeInterval = 0
+    var agent: AgentState?            // AI が動いていれば、その様子
     init(view: TerminalView) { self.view = view }
 }
 
@@ -52,6 +53,8 @@ final class PaneContainer: NSView {
     /// true なら上下、false なら左右に並べる
     var vertical = false { didSet { if vertical != oldValue { layoutPanes() } } }
     var dividerColor = NSColor.white.withAlphaComponent(0.18) { didSet { needsDisplay = true } }
+    /// 上に信号ボタンもタブバーもない（AI モード：信号ボタンは左の一覧の上にある）。上の余白をとらない
+    var chromeless = false { didSet { if chromeless != oldValue { layoutPanes() } } }
     /// 画面の並びや大きさが変わった（スクロール表示や検索窓を合わせ直す）
     var onLayout: (() -> Void)?
     private static let gap: CGFloat = 1     // 2つの画面のあいだの線
@@ -74,20 +77,21 @@ final class PaneContainer: NSView {
     private func layoutPanes() {
         let b = bounds
         let g = Self.gap
+        let top = !chromeless
         if panes.count < 2 {
-            panes.first?.chromeTop = true
+            panes.first?.chromeTop = top
             panes.first?.frame = b
         } else if vertical {
             let h = floor((b.height - g) / 2)
-            panes[0].chromeTop = true
+            panes[0].chromeTop = top
             panes[0].frame = NSRect(x: 0, y: 0, width: b.width, height: h)
             panes[1].chromeTop = false      // 下の画面には信号ボタンもタブバーもないので、上の余白はいらない
             panes[1].frame = NSRect(x: 0, y: h + g, width: b.width, height: b.height - h - g)
         } else {
             let w = floor((b.width - g) / 2)
-            panes[0].chromeTop = true
+            panes[0].chromeTop = top
             panes[0].frame = NSRect(x: 0, y: 0, width: w, height: b.height)
-            panes[1].chromeTop = true
+            panes[1].chromeTop = top
             panes[1].frame = NSRect(x: w + g, y: 0, width: b.width - w - g, height: b.height)
         }
         needsDisplay = true
@@ -112,8 +116,14 @@ final class PaneContainer: NSView {
 
     /// 仕切りの線。両端はふわっと消える
     override func draw(_ dirtyRect: NSRect) {
-        guard let line = dividerRect, let ctx = NSGraphicsContext.current?.cgContext else { return }
-        let c = dividerColor.usingColorSpace(.sRGB) ?? dividerColor
+        guard let line = dividerRect else { return }
+        Self.drawDivider(line, color: dividerColor, vertical: vertical)
+    }
+
+    /// 仕切りの線を描く（AI モードの左の一覧とターミナルのあいだの線にも使う）
+    static func drawDivider(_ line: NSRect, color: NSColor, vertical: Bool) {
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let c = color.usingColorSpace(.sRGB) ?? color
         let clear = c.withAlphaComponent(0)
         guard let grad = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
                                     colors: [clear.cgColor, c.cgColor, c.cgColor, clear.cgColor] as CFArray,
@@ -158,6 +168,15 @@ final class TermWindow: NSObject, NSWindowDelegate {
     var onClosed: ((TermWindow) -> Void)?        // ウィンドウが閉じた（赤ボタン・最後のタブで exit）
     var onCommandFinished: ((TermWindow, Tab, String, Double) -> Void)?   // 長いコマンドが終わった
     var onTransition: ((TermWindow, PaneTransition) -> Void)?             // 画面・タブの開け閉めの演出
+    var onAgentStatus: ((TermWindow, Tab, Pane, AgentStatus) -> Void)?    // AI の様子が変わった（承認待ち・完了など）
+    var onHideInsteadOfClose: ((TermWindow) -> Void)?                     // AI が動いているので、閉じずに隠す
+
+    // MARK: AI モード（⌘\）
+    /// AI モード：タブが左に縦に並び、それぞれの AI の様子が見える
+    private(set) var agentMode = false
+    private let sidebar = AgentListView(style: .sidebar)
+    private var peek: AgentPeekView?
+    static let sidebarWidth: CGFloat = 264
 
     /// ウィンドウのふち全体が光る枠（tab-colors = edge）
     private let edge = EdgeGlowView()
@@ -233,6 +252,15 @@ final class TermWindow: NSObject, NSWindowDelegate {
         box.addSubview(effect)
         box.addSubview(tint)
         box.addSubview(tabBar)
+        sidebar.isHidden = true
+        sidebar.topInset = 30
+        sidebar.autoresizingMask = [.height]
+        sidebar.frame = NSRect(x: 0, y: 0, width: Self.sidebarWidth, height: box.bounds.height)
+        sidebar.onAction = { [weak self] a, r in
+            guard let self else { return }
+            self.agentAction(a, r, in: self.sidebar)
+        }
+        box.addSubview(sidebar, positioned: .above, relativeTo: tint)
         // スクロール表示と一番下へ戻るボタンは、操作している画面の右端に合わせて置く（layoutPaneChrome）
         scrollGlow.frame = NSRect(x: box.bounds.width - 24, y: 0, width: 24, height: box.bounds.height)
         scrollGlow.onDrag = { [weak self] f, jump in self?.termView.scroll(toFraction: f, animated: jump) }
@@ -327,6 +355,7 @@ final class TermWindow: NSObject, NSWindowDelegate {
         let tab = Tab(first: makePane(), slot: slot, frame: box.bounds)
         tab.container.autoresizingMask = [.width, .height]
         tab.container.dividerColor = colors.foreground.withAlphaComponent(0.18)
+        tab.container.chromeless = agentMode
         tab.container.onLayout = { [weak self, weak tab] in
             guard let s = self, let t = tab, s.tabs.indices.contains(s.active), s.tabs[s.active] === t else { return }
             s.layoutPaneChrome()
@@ -344,7 +373,7 @@ final class TermWindow: NSObject, NSWindowDelegate {
         if animates {   // 中身はふわっと現れて、タブバーのタブはぽよんと弾む
             fadeIn(t.container, duration: 0.25)
             tabBar.pop(active)
-            if let r = pillScreenRect(active) { onTransition?(self, .sparkle(r, count: 10)) }
+            if let r = tabScreenRect(active) { onTransition?(self, .sparkle(r, count: 10)) }
         }
     }
 
@@ -358,7 +387,7 @@ final class TermWindow: NSObject, NSWindowDelegate {
         select(i, pane: pane)
         guard changed, animates else { return }
         tabBar.pop(i, strength: 0.18)
-        if let r = pillScreenRect(i) { onTransition?(self, .sparkle(r, count: 5)) }
+        if let r = tabScreenRect(i) { onTransition?(self, .sparkle(r, count: 5)) }
     }
 
     /// タブ i の画面 pane を選ぶ（pane が nil なら、そのタブで前に選んでいた画面）
@@ -396,7 +425,7 @@ final class TermWindow: NSObject, NSWindowDelegate {
     private func show(_ t: Tab) {
         let c = t.container
         if c.superview !== box {
-            c.frame = box.bounds
+            c.frame = contentFrame
             box.addSubview(c, positioned: .above, relativeTo: tint)
         }
         updatePaneFocus(t)
@@ -425,6 +454,7 @@ final class TermWindow: NSObject, NSWindowDelegate {
 
     /// ⌘W：分割していなければ2つに分ける（split-direction の向き）。分割していれば、左右と上下を入れ替える
     func splitOrFlip() {
+        guard !agentMode else { NSSound.beep(); return }   // AI モードでは分割しない
         let t = tabs[active]
         closeSearch(refocus: false)
         if t.isSplit {
@@ -475,7 +505,7 @@ final class TermWindow: NSObject, NSWindowDelegate {
         if wasActive { closeSearch(refocus: false) }
         if animates {   // 見ていたタブなら中身が消えていき、タブバーのタブがあった場所からキラキラ
             if wasActive, let snap = snapshot(t.container) { onTransition?(self, .poof(snap.image, snap.rect)) }
-            if let r = pillScreenRect(i) { onTransition?(self, .sparkle(r, count: 10)) }
+            if let r = tabScreenRect(i) { onTransition?(self, .sparkle(r, count: 10)) }
         }
         tabs.remove(at: i)
         t.container.removeFromSuperview()
@@ -607,6 +637,278 @@ final class TermWindow: NSObject, NSWindowDelegate {
     func startLog(to url: URL) -> Bool { termView.startLog(to: url) }
     func stopLog() { termView.stopLog() }
 
+    // MARK: - AI エージェント
+
+    /// AI モードのときは、ターミナルを一覧の右に置く
+    private var contentFrame: NSRect {
+        guard agentMode else { return box.bounds }
+        let w = Self.sidebarWidth
+        return NSRect(x: w, y: 0, width: max(0, box.bounds.width - w), height: box.bounds.height)
+    }
+
+    /// ⌘\：AI モードと通常モードを切り替える
+    func setAgentMode(_ on: Bool) {
+        guard on != agentMode else { return }
+        agentMode = on
+        closeSearch(refocus: false)
+        sidebar.frame = NSRect(x: 0, y: 0, width: Self.sidebarWidth, height: box.bounds.height)
+        sidebar.isHidden = !on
+        for t in tabs { t.container.chromeless = on }
+        tabs[active].container.frame = contentFrame
+        updateTabBar()
+        if on { refreshNames() }
+        window.makeFirstResponder(termView)
+    }
+
+    var runningAgents: Int { tabs.reduce(0) { $0 + $1.panes.filter { $0.agent != nil }.count } }
+    var pendingApprovals: Int { tabs.reduce(0) { $0 + $1.panes.filter { $0.agent?.status == .approval }.count } }
+    func isShowing(_ t: Tab) -> Bool { tabs.indices.contains(active) && tabs[active] === t }
+
+    /// 1秒ごと：前面のプロセスで AI を見分け、画面の文字から様子を読む
+    private func updateAgent(_ t: Tab, _ p: Pane, _ fg: String?) {
+        guard fg != nil else {
+            if p.agent != nil {           // AI が終わった
+                p.agent = nil
+                onAgentStatus?(self, t, p, .waiting)
+            }
+            return
+        }
+        if p.agent == nil {
+            guard let name = fg, let k = AgentKind.detect(name: name, args: p.view.pty.foregroundArgs) else { return }
+            p.agent = AgentState(kind: k)
+            sparkle(t, count: 6)          // AI がやってきた
+        }
+        guard let a = p.agent else { return }
+        let before = a.status
+        let info = AgentScreen.scan(p.view.screenLines(p.view.term.rows))
+        if info.approval {
+            if a.request.isEmpty { a.request = info.question }
+            a.quiet = 0
+            a.set(.approval)
+        } else if info.busy {
+            if !a.hookDoing && !info.activity.isEmpty { a.doing = info.activity }
+            if a.status == .approval { a.request = "" }
+            a.quiet = 0
+            a.set(.thinking)
+        } else if !a.hookStatus && (a.status == .thinking || a.status == .approval) {
+            // 画面から「考え中」が消えた：答えを書いているあいだに一瞬消えることもあるので、
+            // しばらく消えたままなのを見てから「完了」に（hooks があれば、終わりは hooks の Stop で決める）
+            a.quiet += 1
+            if a.quiet >= (a.hookDoing ? 8 : 5) {
+                a.request = ""
+                a.set(.done)
+            }
+        }
+        if a.status != before { statusChanged(t, p, a) }
+    }
+
+    /// hooks から届いた知らせ。この窓の画面のものなら反映して true
+    func handleHook(_ e: AgentHookEvent) -> Bool {
+        for t in tabs {
+            for p in t.panes where p.view.paneID == e.pane {
+                let a: AgentState
+                if let cur = p.agent, cur.kind == e.kind {
+                    a = cur
+                } else {
+                    a = AgentState(kind: e.kind)
+                    p.agent = a
+                    sparkle(t, count: 6)
+                }
+                let before = a.status
+                applyHook(e, to: a)
+                if a.status != before { statusChanged(t, p, a) }
+                refreshAgents()
+                return true
+            }
+        }
+        return false
+    }
+
+    private func applyHook(_ e: AgentHookEvent, to a: AgentState) {
+        let what = e.tool.isEmpty ? Self.short(e.detail) : (e.detail.isEmpty ? e.tool : e.tool + " " + Self.short(e.detail))
+        switch e.event {
+        case "UserPromptSubmit":
+            a.prompt = e.prompt
+            a.doing = ""
+            a.request = ""
+            a.hookStatus = true
+            a.set(.thinking)
+        case "PreInvocation":       // Antigravity：モデルを呼ぶたび（新しい頼みごとなら、やっていることを消す）
+            if a.status != .thinking && a.status != .approval { a.doing = ""; a.request = "" }
+            if !e.prompt.isEmpty { a.prompt = e.prompt }
+            a.hookStatus = true
+            if a.status != .approval { a.set(.thinking) }
+        case "PreToolUse", "BeforeTool":
+            if !what.isEmpty { a.doing = what; a.hookDoing = true }
+            a.hookStatus = true                  // 終わりは hooks の Stop で届く
+            if a.status != .approval { a.set(.thinking) }
+        case "PostToolUse", "AfterTool":
+            if a.status == .approval { a.request = ""; a.set(.thinking) }
+        case "PermissionRequest":
+            a.request = what.isEmpty ? a.doing : what
+            a.hookStatus = true
+            a.set(.approval)
+        case "Notification":
+            a.hookStatus = true
+            let m = (e.message + " " + e.type).lowercased()
+            if m.contains("permission") || m.contains("approv") {
+                a.request = a.doing.isEmpty ? e.message : a.doing
+                a.set(.approval)
+            } else {
+                a.set(.waiting)
+            }
+        case "Stop", "AfterAgent", "SessionEnd":
+            if e.idle == "false" { break }       // Antigravity：まだ続きがある
+            a.request = ""
+            a.hookStatus = true
+            a.set(.done)
+        default:
+            break
+        }
+    }
+
+    /// 「/Users/me/app/src/login.ts」→「login.ts」、長いコマンドは短く
+    private static func short(_ s: String) -> String {
+        let one = s.replacingOccurrences(of: "\n", with: " ")
+        if !one.contains(" "), one.contains("/") { return (one as NSString).lastPathComponent }
+        return String(one.prefix(80))
+    }
+
+    private func statusChanged(_ t: Tab, _ p: Pane, _ a: AgentState) {
+        if a.status == .done && a.thought > 3 { sparkle(t, count: 12) }   // おつかれさまのキラキラ
+        if a.status == .approval { sparkle(t, count: 12, color: a.status.color(colors.palette)) }   // 呼ばれてるよのキラキラ（薄い紫）
+        onAgentStatus?(self, t, p, a.status)
+    }
+
+    /// タブの場所からキラキラ（AI モードなら一覧のカード、通常モードならタブバーのタブ）
+    private func sparkle(_ t: Tab, count: Int, color: NSColor? = nil) {
+        guard animates, let i = tabs.firstIndex(where: { $0 === t }), let r = tabScreenRect(i) else { return }
+        onTransition?(self, .sparkle(r, count: count, color: color))
+    }
+
+    /// 承認・拒否（一覧・のぞき見・トーストのボタンから）。AI が待っているキーを、その画面に送る
+    private func answer(_ i: Int, _ pi: Int, yes: Bool, sparkleAt r: NSRect?) {
+        guard tabs.indices.contains(i), tabs[i].panes.indices.contains(pi) else { return }
+        let t = tabs[i], p = t.panes[pi]
+        guard let a = p.agent, a.status == .approval else { return }
+        p.view.pty.write(yes ? "\r" : "\u{1b}")       // Enter（はじめから選ばれている「はい、今回だけ」）/ Esc
+        a.request = ""
+        a.quiet = 0
+        a.set(yes ? .thinking : .waiting)
+        if yes, let r, animates { onTransition?(self, .sparkle(r, count: 10)) }
+        onAgentStatus?(self, t, p, a.status)
+        refreshAgents()
+    }
+
+    /// トーストのボタンから（画面の目印で探す）
+    func answer(paneID: String, yes: Bool) {
+        for (i, t) in tabs.enumerated() {
+            if let pi = t.panes.firstIndex(where: { $0.view.paneID == paneID }) {
+                answer(i, pi, yes: yes, sparkleAt: nil)
+                return
+            }
+        }
+    }
+
+    private func agentAction(_ a: AgentListView.Action, _ r: NSRect, in view: NSView) {
+        let scr = window.convertToScreen(view.convert(r, to: nil))
+        switch a {
+        case .select(let i):
+            closePeek()
+            switchTab(i)
+        case .approve(let i, let pi):
+            answer(i, pi, yes: true, sparkleAt: scr)
+        case .deny(let i, let pi):
+            answer(i, pi, yes: false, sparkleAt: nil)
+        }
+    }
+
+    /// 一覧に出すカード（タブ1つに1枚、2行）。分割したタブなら、いちばん急ぐ AI の画面（AI がいなければ操作中の画面）
+    private func agentCards() -> [AgentListView.Card] {
+        tabs.enumerated().map { (i, t) -> AgentListView.Card in
+            let agents = t.panes.indices.filter { t.panes[$0].agent != nil }
+            let pi = agents.max { (t.panes[$0].agent?.status.urgency ?? 0) < (t.panes[$1].agent?.status.urgency ?? 0) }
+                ?? max(0, min(t.focus, t.panes.count - 1))
+            let p = t.panes[pi]
+            let row: AgentListView.Row
+            if let a = p.agent {
+                row = AgentListView.Row(kind: a.kind, image: AgentBadge.image(a.kind, config), status: a.status,
+                                        label: a.label, text: a.summary, time: a.timeText,
+                                        ask: a.status == .approval, pane: pi, labelFace: a.labelFace)
+            } else {
+                let what = p.running.map { "$ " + $0 } ?? (p.view.pty.currentDirectory ?? "")
+                row = AgentListView.Row(kind: nil, image: nil, status: nil, label: "", text: what, time: "", ask: false, pane: pi)
+            }
+            return AgentListView.Card(icon: icon(for: t.slot, style: .pill), color: tabColor(t), name: t.name,
+                                      active: i == active, split: splitKind(t), row: row)
+        }
+    }
+
+    /// いちばん急ぐ様子（タブバーの印に使う）
+    private func urgentStatus(_ t: Tab) -> AgentStatus? {
+        t.panes.compactMap { $0.agent?.status }.max { $0.urgency < $1.urgency }
+    }
+
+    /// 一覧・のぞき見・タブバーの印を、いまの様子で描き直す
+    private func refreshAgents() {
+        let p = colors.palette
+        if agentMode {
+            sidebar.palette = p
+            sidebar.fg = colors.foreground
+            sidebar.divider = colors.foreground.withAlphaComponent(0.18)
+            sidebar.cards = agentCards()
+        }
+        if let pk = peek {
+            pk.bg = colors.background
+            pk.fg = colors.foreground
+            pk.list.palette = p
+            pk.list.fg = colors.foreground
+            pk.list.cards = agentCards()
+            let need = pendingApprovals
+            let busy = tabs.reduce(0) { $0 + $1.panes.filter { $0.agent?.status == .thinking }.count }
+            pk.header = [need > 0 ? "\(need) needs you" : nil, busy > 0 ? "\(busy) thinking" : nil].compactMap { $0 }.joined(separator: " · ")
+            pk.place()
+        }
+        if !tabBar.isHidden {
+            for (i, t) in tabs.enumerated() where i < tabBar.items.count {
+                let s = urgentStatus(t)
+                tabBar.items[i].markColor = s?.color(p)
+                tabBar.items[i].markThinking = s == .thinking
+                tabBar.items[i].markPulse = s == .approval
+            }
+            tabBar.needsDisplay = true
+        }
+    }
+
+    // MARK: ⌘L ののぞき見
+
+    func togglePeek() {
+        if peek != nil { closePeek() } else { openPeek() }
+    }
+
+    private func openPeek() {
+        let v = AgentPeekView(frame: box.bounds)
+        v.autoresizingMask = [.width, .height]
+        v.list.onAction = { [weak self, weak v] a, r in
+            guard let self, let v else { return }
+            self.agentAction(a, r, in: v.list)
+        }
+        v.onClose = { [weak self] in self?.closePeek() }
+        peek = v
+        box.addSubview(v)
+        refreshAgents()
+        v.list.cursor = active          // 矢印キーは、いま見ているタブから動かす
+        window.makeFirstResponder(v)
+    }
+
+    func closePeek() {
+        guard let v = peek else { return }
+        peek = nil
+        v.list.stop()
+        v.removeFromSuperview()
+        if !closing { window.makeFirstResponder(termView) }
+    }
+
     // MARK: - 開け閉めの演出（tab-animations）
 
     private var animates: Bool { config.bool("fx.tab_anim") && window.isVisible }
@@ -628,6 +930,15 @@ final class TermWindow: NSObject, NSWindowDelegate {
         let (a, b) = t.container.vertical ? (NSPoint(x: r.minX, y: r.midY), NSPoint(x: r.maxX, y: r.midY))
                                           : (NSPoint(x: r.midX, y: r.minY), NSPoint(x: r.midX, y: r.maxY))
         onTransition?(self, .beam(from: scr(a), to: scr(b)))
+    }
+
+    /// i 番目のタブの場所（画面座標）。AI モードなら左の一覧のカード、ふだんはタブバーのタブ
+    private func tabScreenRect(_ i: Int) -> NSRect? {
+        if agentMode {
+            guard let r = sidebar.cardRect(i) else { return nil }
+            return window.convertToScreen(sidebar.convert(r, to: nil))
+        }
+        return pillScreenRect(i)
     }
 
     /// タブバーの i 番目のタブの場所（画面座標）。タブバーが出ていなければ nil
@@ -660,7 +971,7 @@ final class TermWindow: NSObject, NSWindowDelegate {
     // MARK: - タブバー
 
     private var barVisible: Bool {
-        tabs.count > 1 || config.string("tabs.bar") == "always"
+        !agentMode && (tabs.count > 1 || config.string("tabs.bar") == "always")
     }
 
     private func updateTabBar() {
@@ -695,6 +1006,7 @@ final class TermWindow: NSObject, NSWindowDelegate {
         tabBar.needsDisplay = true
         layoutSearch()
         updateScrollUI(kick: false)
+        refreshAgents()
     }
 
     /// 長いコマンドが終わったかを調べる（終わったら通知）。タブバーが出ていればタブ名も更新
@@ -707,6 +1019,7 @@ final class TermWindow: NSObject, NSWindowDelegate {
         for (i, t) in tabs.enumerated() {
             for p in t.panes {
                 let fg = p.view.pty.foregroundCommand
+                updateAgent(t, p, fg)
                 if let cmd = fg {
                     if p.running == nil { p.startedAt = now }
                     p.running = cmd
@@ -723,7 +1036,8 @@ final class TermWindow: NSObject, NSWindowDelegate {
             }
         }
         if alertChanged { updateTabBar() }
-        if barVisible { refreshNames() }
+        if barVisible || agentMode { refreshNames() }
+        refreshAgents()
     }
 
     /// タブ名：操作している画面のシェルがいるフォルダ。何か動いていればそのコマンド名
@@ -732,7 +1046,7 @@ final class TermWindow: NSObject, NSWindowDelegate {
         for t in tabs {
             // 前面のコマンドは poll() で調べたものを使う（同じ情報を2回取りにいかない）
             let p = t.panes[t.focus]
-            let n = p.running ?? p.view.pty.currentDirectory ?? "shell"
+            let n = (p.agent == nil ? p.running : nil) ?? p.view.pty.currentDirectory ?? "shell"
             if n != t.name { t.name = n; changed = true }
         }
         guard changed else { return }
@@ -790,7 +1104,16 @@ final class TermWindow: NSObject, NSWindowDelegate {
     func windowDidChangeScreen(_ notification: Notification) { refreshCorners() }
     func windowDidBecomeMain(_ notification: Notification) { refreshCorners() }
 
+    /// 赤ボタン：AI が動いていれば、閉じずに隠す（セッションを切らさない）
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard runningAgents > 0, !closing else { return true }
+        onHideInsteadOfClose?(self)
+        return false
+    }
+
     func windowWillClose(_ notification: Notification) {
+        closePeek()
+        sidebar.stop()
         nameTimer?.invalidate()
         nameTimer = nil
         tabBar.stopPulse()
@@ -820,6 +1143,9 @@ final class TabBarView: NSView {
         var split: Split = .none
         var color: NSColor? = nil
         var alert = false
+        var markColor: NSColor? = nil     // AI の様子の印の色（なければ印なし）
+        var markThinking = false          // 考え中（…がゆっくり明滅）
+        var markPulse = false             // 承認待ち（アイコンと印が点滅）
     }
 
     /// 分割アイコン（左右なら縦に、上下なら横に仕切った角丸の四角）。文字の高さの真ん中にそろえる
@@ -849,7 +1175,7 @@ final class TabBarView: NSView {
 
     /// 光っているタブがあるあいだだけ、ゆっくり明滅させる
     private func updatePulse() {
-        let need = items.contains { $0.alert } && !isHidden
+        let need = items.contains { $0.alert || $0.markThinking || $0.markPulse } && !isHidden
         if need && pulseTimer == nil {
             let t = Timer(timeInterval: 1.0 / 20.0, repeats: true) { [weak self] _ in self?.needsDisplay = true }
             RunLoop.main.add(t, forMode: .common)
@@ -1000,7 +1326,11 @@ final class TabBarView: NSView {
             let size: CGFloat = it.icon == "●" ? 7 : 13
             let col = it.color ?? accent
             withPop(i, r) {
-                if it.alert && !on {
+                if it.markPulse, let mc = it.markColor {
+                    let p = pulse
+                    centered(it.icon, font: .systemFont(ofSize: size), color: mc.withAlphaComponent(0.35 + 0.65 * p), in: r,
+                             glow: mc.withAlphaComponent(p))
+                } else if it.alert && !on {
                     let p = pulse
                     centered(it.icon, font: .systemFont(ofSize: size), color: col.withAlphaComponent(0.35 + 0.65 * p), in: r,
                              glow: col.withAlphaComponent(p))
@@ -1045,12 +1375,14 @@ final class TabBarView: NSView {
         }
         let it = items[i]
         let font = NSFont.systemFont(ofSize: 11, weight: on ? .medium : .regular)
-        let textCol = on ? fg : fg.withAlphaComponent(0.45)
+        var textCol = on ? fg : fg.withAlphaComponent(0.45)
+        if it.markPulse, let mc = it.markColor { textCol = mc.withAlphaComponent(0.45 + 0.55 * pulse) }   // 承認待ちは薄い紫
         // アイコンだけタブの色（光るときは明滅）
         let str = NSMutableAttributedString()
         if !it.icon.isEmpty {
             var ic = it.color.map { on ? $0 : $0.withAlphaComponent(0.6) } ?? textCol
             if it.alert && !on { ic = (it.color ?? accent).withAlphaComponent(0.35 + 0.65 * pulse) }
+            if it.markPulse, let mc = it.markColor { ic = mc.withAlphaComponent(0.35 + 0.65 * pulse) }
             str.append(NSAttributedString(string: it.icon + " ", attributes: [.font: font, .foregroundColor: ic]))
         }
         if let mark = splitMark(it.split, color: textCol.withAlphaComponent(on ? 0.75 : 0.45), font: font) {
@@ -1058,13 +1390,32 @@ final class TabBarView: NSView {
         }
         str.append(NSAttributedString(string: it.name, attributes: [.font: font, .foregroundColor: textCol]))
         let para = NSMutableParagraphStyle()
-        para.alignment = .center
         para.lineBreakMode = .byTruncatingTail
         str.addAttribute(.paragraphStyle, value: para, range: NSRange(location: 0, length: str.length))
+        // AI の様子の印は、文字ではなく図形で、文字の行のまん中の高さに描く（考え中は3つの点、ほかは小さな丸）
+        let markW: CGFloat = it.markColor == nil ? 0 : (it.markThinking ? 19 : 11)
         let inner = r.insetBy(dx: 10, dy: 0)
         let h = ceil(font.ascender - font.descender)
-        str.draw(with: NSRect(x: inner.minX, y: inner.midY - h / 2, width: inner.width, height: h),
+        let tw = min(ceil(str.size().width) + 1, max(0, inner.width - markW))
+        let x0 = inner.midX - (tw + markW) / 2
+        let cy = inner.midY + (font.ascender + font.descender) / 2 - (font.xHeight / 2)
+        str.draw(with: NSRect(x: x0, y: inner.midY - h / 2, width: tw, height: h),
                  options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+        if let mc = it.markColor {
+            let mx = x0 + tw + 5
+            if it.markThinking {
+                let t = CACurrentMediaTime()
+                for k in 0..<3 {
+                    let a = 0.3 + 0.7 * max(0, sin(t * 7 - Double(k) * 0.9))
+                    mc.withAlphaComponent(CGFloat(a)).setFill()
+                    NSBezierPath(ovalIn: NSRect(x: mx + CGFloat(k) * 5, y: cy - 1.5, width: 3, height: 3)).fill()
+                }
+            } else {
+                let a: CGFloat = it.markPulse ? 0.35 + 0.65 * pulse : 1
+                mc.withAlphaComponent(a).setFill()
+                NSBezierPath(ovalIn: NSRect(x: mx, y: cy - 2.5, width: 5, height: 5)).fill()
+            }
+        }
     }
 }
 
