@@ -584,8 +584,11 @@ final class AgentListView: NSView {
     private var scrollTarget: CGFloat = 0     // 向かっている位置
     private var scrollTimer: Timer?
 
+    /// 下にあけておく高さ（左の一覧だけ。のぞき見はパネルがカードの高さぴったりなので、あけるとずれる）
+    private var bottomInset: CGFloat { style == .sidebar ? 8 : 0 }
+
     private var maxScroll: CGFloat {
-        max(0, contentHeight(width: bounds.width) + topInset + 8 - bounds.height)
+        max(0, contentHeight(width: bounds.width) + topInset + bottomInset - bounds.height)
     }
 
     private func clampScroll(_ v: CGFloat) -> CGFloat { min(max(0, v), maxScroll) }
@@ -613,7 +616,7 @@ final class AgentListView: NSView {
         let r = rs[i]
         var t = scrollTarget
         if r.minY - t < topInset { t = r.minY - topInset }
-        if r.maxY - t > bounds.height - 8 { t = r.maxY - bounds.height + 8 }
+        if r.maxY - t > bounds.height - bottomInset { t = r.maxY - bounds.height + bottomInset }
         t = clampScroll(t)
         guard t != scrollTarget else { return }
         scrollTarget = t
@@ -930,14 +933,14 @@ final class AgentPeekView: NSView {
     /// まん中のパネル。カードが1列ならパネルも細くして、カードがまん中に来るように
     private var panel: NSRect {
         let w = max(200, min(list.columns == 1 ? 400 : 760, bounds.width - 48))
-        let h = max(120, min(bounds.height - 48, list.contentHeight(width: w - 32) + 88))
+        let h = max(100, min(bounds.height - 48, list.contentHeight(width: w - 32) + 68))
         return NSRect(x: (bounds.width - w) / 2, y: (bounds.height - h) / 2, width: w, height: h)
     }
 
     /// カードの数や大きさが変わったら、並べ直す
     func place() {
         let p = panel
-        list.frame = NSRect(x: p.minX + 16, y: p.minY + 50, width: p.width - 32, height: p.height - 88)
+        list.frame = NSRect(x: p.minX + 16, y: p.minY + 50, width: p.width - 32, height: p.height - 68)
         needsDisplay = true
     }
 
@@ -961,11 +964,6 @@ final class AgentPeekView: NSView {
         title.append(NSAttributedString(string: "   " + header, attributes: [
             .font: NSFont.systemFont(ofSize: 12), .foregroundColor: fg.withAlphaComponent(0.6)]))
         title.draw(with: NSRect(x: p.minX + 20, y: p.minY + 18, width: p.width - 40, height: 20), options: [.usesLineFragmentOrigin])
-        let para = NSMutableParagraphStyle()
-        para.alignment = .center
-        NSAttributedString(string: "Arrow keys to move · Return to jump · Esc to close", attributes: [
-            .font: NSFont.systemFont(ofSize: 11), .foregroundColor: fg.withAlphaComponent(0.5), .paragraphStyle: para])
-            .draw(with: NSRect(x: p.minX, y: p.maxY - 28, width: p.width, height: 16), options: [.usesLineFragmentOrigin])
     }
 
     override func mouseDown(with e: NSEvent) {
