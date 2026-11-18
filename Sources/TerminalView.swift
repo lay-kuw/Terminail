@@ -29,6 +29,8 @@ final class TerminalView: NSView, NSTextInputClient {
     var chromeHeight: CGFloat { chromeTop ? 28 + extraTop : 0 }
     /// タブバーが出ているか（出ていれば、記録中の赤い点をタブバーの下に置く）
     var tabBarShown = false { didSet { if tabBarShown != oldValue { needsDisplay = true } } }
+    /// ウィンドウの上端にあって、信号ボタンの行があいている（AI モード：信号ボタンは左の一覧の上）
+    var topRowFree = false { didSet { if topRowFree != oldValue { needsDisplay = true } } }
 
     /// 分割しているとき、いま操作している画面か。false なら少し暗く描いて、カーソルは枠だけにする
     var isActivePane = true {
@@ -659,7 +661,7 @@ final class TerminalView: NSView, NSTextInputClient {
             let red = palette.count > 1 ? palette[1] : CGColor(srgbRed: 0.97, green: 0.46, blue: 0.56, alpha: 1)
             ctx.setFillColor(red)
             // 上の余白があいていれば信号ボタンの行に。タブバーがあるときや下の画面では、そのすぐ下に
-            let y: CGFloat = chromeTop && !tabBarShown ? 11 : chromeHeight + 4
+            let y: CGFloat = (chromeTop && !tabBarShown) || topRowFree ? 11 : chromeHeight + 4
             ctx.fillEllipse(in: CGRect(x: bounds.maxX - 18, y: y, width: 7, height: 7))
         }
         if !isActivePane {   // 分割中に操作していない画面は、背景の色を薄く重ねて少し暗く

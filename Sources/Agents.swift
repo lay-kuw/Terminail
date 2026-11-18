@@ -754,24 +754,24 @@ final class AgentListView: NSView {
         let asking = c.row.status == .approval
         let askCol = AgentStatus.approval.color(palette).withAlphaComponent(0.45 + 0.55 * pulse)
         let iconCol = asking ? askCol : c.color
-        if !c.icon.isEmpty {
-            let font = NSFont.systemFont(ofSize: 12)
-            var attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: iconCol]
-            if c.active || asking {
-                let sh = NSShadow()
-                sh.shadowColor = iconCol.withAlphaComponent(0.9)
-                sh.shadowBlurRadius = 6
-                sh.shadowOffset = .zero
-                attrs[.shadow] = sh
-            }
-            // アイコンの記号は形も大きさもまちまちなので、見えている形のまん中を欄のまん中に合わせる
-            let str = NSAttributedString(string: c.icon, attributes: attrs)
+        let nameFont = NSFont.systemFont(ofSize: 11, weight: c.active ? .semibold : .medium)   // 様子の行（Done など）と同じ大きさ
+        if !c.icon.isEmpty, let ctx = NSGraphicsContext.current?.cgContext {
+            // アイコンの記号は形も大きさもまちまちなので、見えている形のまん中を、名前の文字の高さのまん中に合わせる。
+            // 文字の並びの基準線（ベースライン）を自分で決めて描く（フォントが替わっても、位置がずれないように）
+            let key = NSAttributedString.Key(kCTForegroundColorFromContextAttributeName as String)
+            let str = NSAttributedString(string: c.icon, attributes: [.font: NSFont.systemFont(ofSize: 12), key: true])
             let line = CTLineCreateWithAttributedString(str)
-            var asc: CGFloat = 0, desc: CGFloat = 0, lead: CGFloat = 0
-            _ = CTLineGetTypographicBounds(line, &asc, &desc, &lead)
             let ink = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
-            let center = NSPoint(x: nameRow.minX + Self.iconW / 2, y: nameRow.midY)
-            str.draw(at: NSPoint(x: center.x - ink.midX, y: center.y + ink.midY - asc))
+            let textH = ceil(nameFont.ascender - nameFont.descender)
+            let baseline = nameRow.midY - textH / 2 + nameFont.ascender        // 名前の文字のベースライン
+            let center = NSPoint(x: nameRow.minX + Self.iconW / 2, y: baseline - nameFont.capHeight / 2)
+            ctx.saveGState()
+            if c.active || asking { ctx.setShadow(offset: .zero, blur: 6, color: iconCol.withAlphaComponent(0.9).cgColor) }
+            ctx.setFillColor(iconCol.cgColor)
+            ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)   // 上下が反転したビューの中なので、文字を正しい向きに
+            ctx.textPosition = CGPoint(x: center.x - ink.midX, y: center.y + ink.midY)
+            CTLineDraw(line, ctx)
+            ctx.restoreGState()
         }
         var nameRight = nameRow.maxX
         if c.split != .none, let img = Self.splitImage(c.split, color: fg.withAlphaComponent(0.55)) {
@@ -788,7 +788,6 @@ final class AgentListView: NSView {
             text(c.row.time, tf, col.withAlphaComponent(0.85), NSRect(x: nameRight - w, y: nameRow.minY, width: w + 1, height: Self.rowH))
             nameRight -= w + 8
         }
-        let nameFont = NSFont.systemFont(ofSize: 11, weight: c.active ? .semibold : .medium)   // 様子の行（Done など）と同じ大きさ
         text(c.name, nameFont, asking ? askCol : (c.active ? fg : fg.withAlphaComponent(0.75)),
              NSRect(x: nameRow.minX + Self.iconW + 6, y: nameRow.minY, width: nameRight - nameRow.minX - Self.iconW - 6, height: Self.rowH))
 

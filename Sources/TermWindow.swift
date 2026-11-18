@@ -78,6 +78,7 @@ final class PaneContainer: NSView {
         let b = bounds
         let g = Self.gap
         let top = !chromeless
+        for (i, p) in panes.enumerated() { p.topRowFree = chromeless && (i == 0 || !vertical) }   // 記録中の赤い点を信号ボタンの行に
         if panes.count < 2 {
             panes.first?.chromeTop = top
             panes.first?.frame = b
