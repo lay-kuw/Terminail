@@ -838,8 +838,8 @@ final class TermWindow: NSObject, NSWindowDelegate {
                                         label: a.label, text: a.summary, time: a.timeText,
                                         ask: a.status == .approval, pane: pi, labelFace: a.labelFace)
             } else {
-                let what = p.running.map { "$ " + $0 } ?? (p.view.pty.currentDirectory ?? "")
-                row = AgentListView.Row(kind: nil, image: nil, status: nil, label: "", text: what, time: "", ask: false, pane: pi)
+                // AI がいないタブの2行目は空けておく（フォルダ名は1行目に出ているので）
+                row = AgentListView.Row(kind: nil, image: nil, status: nil, label: "", text: "", time: "", ask: false, pane: pi)
             }
             return AgentListView.Card(icon: icon(for: t.slot, style: .pill), color: tabColor(t), name: t.name,
                                       active: i == active, split: splitKind(t), row: row)
