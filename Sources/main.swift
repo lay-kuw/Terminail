@@ -466,7 +466,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             case "-": w.zoom(-1); return nil
             case "0": w.zoom(0); return nil
             case "k": w.clearScrollback(); return nil
-            case "l": w.togglePeek(); return nil
+            case "l":                       // のぞき見は AI モードのときだけ
+                guard w.agentMode else { return e }
+                w.togglePeek(); return nil
             case "\\", "¥": self.toggleAgentMode(nil); return nil   // 日本語キーボードの ¥ キーでも
             default: return e
             }

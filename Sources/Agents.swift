@@ -543,7 +543,8 @@ final class AgentListView: NSView {
     private static func cardHeight(_ c: Card) -> CGFloat { pad * 2 + rowH * 2 }
 
     /// 横に並べる数。左の一覧は縦に1列、のぞき見は2列
-    var columns: Int { style == .peek ? 2 : 1 }
+    /// （のぞき見でもタブが1つなら1列。半分の幅のカードが左に寄らないように）
+    var columns: Int { style == .peek ? min(2, max(1, cards.count)) : 1 }
 
     /// カードの場所（スクロールする前の位置）
     private func cardRects(width: CGFloat) -> [NSRect] {
@@ -926,8 +927,9 @@ final class AgentPeekView: NSView {
     override var acceptsFirstResponder: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    /// まん中のパネル。カードが1列ならパネルも細くして、カードがまん中に来るように
     private var panel: NSRect {
-        let w = max(200, min(760, bounds.width - 48))
+        let w = max(200, min(list.columns == 1 ? 400 : 760, bounds.width - 48))
         let h = max(120, min(bounds.height - 48, list.contentHeight(width: w - 32) + 88))
         return NSRect(x: (bounds.width - w) / 2, y: (bounds.height - h) / 2, width: w, height: h)
     }

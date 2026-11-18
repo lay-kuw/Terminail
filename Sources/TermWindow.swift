@@ -652,6 +652,7 @@ final class TermWindow: NSObject, NSWindowDelegate {
         guard on != agentMode else { return }
         agentMode = on
         closeSearch(refocus: false)
+        if !on { closePeek() }          // のぞき見は AI モードのときだけ
         sidebar.frame = NSRect(x: 0, y: 0, width: Self.sidebarWidth, height: box.bounds.height)
         sidebar.isHidden = !on
         for t in tabs { t.container.chromeless = on }
@@ -884,7 +885,7 @@ final class TermWindow: NSObject, NSWindowDelegate {
     // MARK: ⌘L ののぞき見
 
     func togglePeek() {
-        if peek != nil { closePeek() } else { openPeek() }
+        if peek != nil { closePeek() } else if agentMode { openPeek() }
     }
 
     private func openPeek() {

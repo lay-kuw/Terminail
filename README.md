@@ -83,7 +83,7 @@ To start it at login, add it in System Settings → General → Login Items.
 | New tab | `⌘T` |
 | Split a tab / flip the split | `⌘W` (splits in two; press again to swap side-by-side ⇄ stacked. Not in AI mode) |
 | AI mode on / off | `⌘\` (`⌘¥` on a Japanese keyboard), or Window → AI Mode |
-| Peek at every agent | `⌘L` (arrow keys to move, `Return` to jump, `Esc` to close) |
+| Peek at every agent (AI mode) | `⌘L` (arrow keys to move, `Return` to jump, `Esc` to close) |
 | Next / previous pane or tab | `⌘]` / `⌘[` (goes through each pane, then on to the next tab. Clicking works too) |
 | Close a pane or tab | `exit` (closes just that pane when split, or the tab when it's the only one) |
 | Close a window | The red button, or `exit` in the last pane of the last tab |
@@ -141,7 +141,7 @@ To start it at login, add it in System Settings → General → Login Items.
 - Statuses: **Hello World ₍ᐢ. .ᐢ₎♡** (just started), **Thinking** (bouncing dots), **Needs you** (the tab glows light purple with a little sparkle, waiting for your OK), **Your turn**, **Done** (with a little sparkle), **Error**
 - When an agent asks for permission, ✓ / ✕ buttons show up on its card. ✓ presses Enter (the option it already has selected, normally "yes, just this once") and ✕ presses Esc. There is no "always allow" button on purpose
 - Each card is two lines and keeps the same height whatever the agent is doing. With lots of tabs, scroll the list with your mouse or trackpad. A split tab shows the pane that needs you most. Splitting itself is off while you are in AI mode
-- `⌘L` peeks at every agent in a bigger glass panel, in either mode. Click a card, or move with the arrow keys and press `Return`, to jump to that tab
+- In AI mode, `⌘L` peeks at every agent in a bigger glass panel. Click a card, or move with the arrow keys and press `Return`, to jump to that tab
 - In the normal layout, tabs still get a small mark: bouncing dots while thinking, a pulsing dot and glowing icon when an agent needs you
 - If an agent needs you while you are looking elsewhere, a toast with **Approve** / **Deny** pops up, and the Dock icon shows how many are waiting
 - Closing a window with the red button while agents are running just hides it, so the sessions keep going. Bring it back with the hotkey. `⌘Q` asks before stopping running agents
