@@ -459,9 +459,36 @@ enum AgentBadge {
         let r = NSRect(x: x, y: midY - 7, width: tw + 10, height: 14)
         col.withAlphaComponent(0.18).setFill()
         NSBezierPath(roundedRect: r, xRadius: 7, yRadius: 7).fill()
-        let th = ceil(font.ascender - font.descender)
-        str.draw(with: NSRect(x: r.minX + 5, y: midY - th / 2, width: tw + 1, height: th), options: [.usesLineFragmentOrigin])
+        AgentText.draw(k.title, font: font, color: col, in: NSRect(x: r.minX + 5, y: r.minY, width: tw + 1, height: r.height))
         return r.width
+    }
+}
+
+/// AI の一覧の文字。大文字の高さのまん中を行のまん中に合わせて描く。
+/// 行の箱（ascender〜descender）のまん中に置くと、文字の見た目が点・バッジ・アイコンより少しずれるため、
+/// ベースラインを自分で決めて Core Text で描く（上下が反転したビューの中で使う）
+enum AgentText {
+    /// 行のまん中 midY に、大文字の高さのまん中が来るベースライン（画面の点の境目にそろえる）
+    static func baseline(_ font: NSFont, midY: CGFloat) -> CGFloat {
+        let scale = NSGraphicsContext.current?.cgContext.userSpaceToDeviceSpaceTransform.d.magnitude ?? 2
+        let s = max(1, scale)
+        return ((midY + font.capHeight / 2) * s).rounded() / s
+    }
+
+    static func draw(_ s: String, font: NSFont, color: NSColor, in r: NSRect, center: Bool = false) {
+        guard r.width > 0, !s.isEmpty, let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
+        var line = CTLineCreateWithAttributedString(NSAttributedString(string: s, attributes: attrs))
+        if CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil)) > r.width {
+            let dots = CTLineCreateWithAttributedString(NSAttributedString(string: "…", attributes: attrs))
+            line = CTLineCreateTruncatedLine(line, Double(r.width), .end, dots) ?? line
+        }
+        let w = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+        ctx.saveGState()
+        ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)   // 上下が反転したビューの中なので、文字を正しい向きに
+        ctx.textPosition = CGPoint(x: center ? r.midX - w / 2 : r.minX, y: baseline(font, midY: r.midY))
+        CTLineDraw(line, ctx)
+        ctx.restoreGState()
     }
 }
 
@@ -718,13 +745,7 @@ final class AgentListView: NSView {
     }
 
     private func text(_ s: String, _ font: NSFont, _ color: NSColor, _ r: NSRect, center: Bool = false) {
-        let para = NSMutableParagraphStyle()
-        para.lineBreakMode = .byTruncatingTail
-        if center { para.alignment = .center }
-        let str = NSAttributedString(string: s, attributes: [.font: font, .foregroundColor: color, .paragraphStyle: para])
-        let h = ceil(font.ascender - font.descender)
-        str.draw(with: NSRect(x: r.minX, y: r.midY - h / 2, width: max(0, r.width), height: h),
-                 options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+        AgentText.draw(s, font: font, color: color, in: r, center: center)
     }
 
     private func width(_ s: String, _ font: NSFont) -> CGFloat {
@@ -766,9 +787,8 @@ final class AgentListView: NSView {
             let str = NSAttributedString(string: c.icon, attributes: [.font: NSFont.systemFont(ofSize: 12), key: true])
             let line = CTLineCreateWithAttributedString(str)
             let ink = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
-            let textH = ceil(nameFont.ascender - nameFont.descender)
-            let baseline = nameRow.midY - textH / 2 + nameFont.ascender        // 名前の文字のベースライン
-            let center = NSPoint(x: nameRow.minX + Self.iconW / 2, y: baseline - nameFont.capHeight / 2)
+            // 名前の文字も、大文字の高さのまん中が行のまん中に来るように描いている（AgentText）
+            let center = NSPoint(x: nameRow.minX + Self.iconW / 2, y: AgentText.baseline(nameFont, midY: nameRow.midY) - nameFont.capHeight / 2)
             ctx.saveGState()
             if c.active || asking { ctx.setShadow(offset: .zero, blur: 6, color: iconCol.withAlphaComponent(0.9).cgColor) }
             ctx.setFillColor(iconCol.cgColor)
