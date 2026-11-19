@@ -170,7 +170,6 @@ final class TermWindow: NSObject, NSWindowDelegate {
     var onCommandFinished: ((TermWindow, Tab, String, Double) -> Void)?   // 長いコマンドが終わった
     var onTransition: ((TermWindow, PaneTransition) -> Void)?             // 画面・タブの開け閉めの演出
     var onAgentStatus: ((TermWindow, Tab, Pane, AgentStatus) -> Void)?    // AI の様子が変わった（承認待ち・完了など）
-    var onHideInsteadOfClose: ((TermWindow) -> Void)?                     // AI が動いているので、閉じずに隠す
 
     // MARK: AI モード（⌘\）
     /// AI モード：タブが左に縦に並び、それぞれの AI の様子が見える
@@ -1105,13 +1104,6 @@ final class TermWindow: NSObject, NSWindowDelegate {
     /// 画面に出たときに、もう一度確かめる（出る前は丸さが決まっていないことがあるため）
     func windowDidChangeScreen(_ notification: Notification) { refreshCorners() }
     func windowDidBecomeMain(_ notification: Notification) { refreshCorners() }
-
-    /// 赤ボタン：AI が動いていれば、閉じずに隠す（セッションを切らさない）
-    func windowShouldClose(_ sender: NSWindow) -> Bool {
-        guard runningAgents > 0, !closing else { return true }
-        onHideInsteadOfClose?(self)
-        return false
-    }
 
     func windowWillClose(_ notification: Notification) {
         closePeek()

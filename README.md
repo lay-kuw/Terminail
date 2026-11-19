@@ -144,7 +144,7 @@ To start it at login, add it in System Settings → General → Login Items.
 - In AI mode, `⌘L` peeks at every agent in a bigger glass panel. Click a card, or move with the arrow keys and press `Return`, to jump to that tab
 - In the normal layout, tabs still get a small mark: bouncing dots while thinking, a pulsing dot and glowing icon when an agent needs you
 - If an agent needs you while you are looking elsewhere, a toast with **Approve** / **Deny** pops up, and the Dock icon shows how many are waiting
-- Closing a window with the red button while agents are running just hides it, so the sessions keep going. Bring it back with the hotkey. `⌘Q` asks before stopping running agents
+- Closing the last window (red button or `exit` in the last tab) quits Terminail completely, stopping any running agents. `⌘Q` asks before stopping running agents
 - **Which AI**: Terminail looks at the program running in each pane: `claude`, `codex` and `agy` (Antigravity CLI)
 - **Hooks**: the first time you turn on AI mode, Terminail asks to add small hooks to those tools' settings (`~/.claude/settings.json`, `~/.codex/hooks.json`, `~/.gemini/config/hooks.json`). Your other settings stay as they are, and the original file is saved next to it as `*.terminail-backup`. With hooks, Terminail knows the moment an agent is thinking, done or needs you. Without them, it reads the screen instead. Codex asks you once to trust the new hooks (`/hooks`)
 - To be asked about hooks again, delete `~/.config/terminail/agent-hooks`

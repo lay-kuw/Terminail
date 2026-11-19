@@ -391,17 +391,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         NSApp.dockTile.badgeLabel = n > 0 ? "\(n)" : (badgeCount > 0 ? "\(badgeCount)" : nil)
     }
 
-    /// 赤ボタンで閉じようとしたが、AI が動いている：閉じずに隠して、セッションを続ける
-    private func hideInstead(_ w: TermWindow) {
-        w.closePeek()
-        w.window.orderOut(nil)
-        if !hidden.contains(where: { $0 === w }) { hidden.append(w) }
-        if !windows.contains(where: { $0.window.isVisible }) { NSApp.hide(nil) }
-        let c = Colors(config)
-        toaster.show(icon: "✦", iconColor: c.cursor, text: "AI agents keep working in the background",
-                     fg: c.foreground, bg: c.background, near: w.window) { [weak self] in self?.showAll() }
-    }
-
     /// ⌘Q：AI が動いていれば、止めてよいか確かめる
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let n = windows.reduce(0) { $0 + $1.runningAgents }
@@ -429,7 +418,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         w.onClosed = { [weak self] w in self?.windowClosed(w) }
         w.onCommandFinished = { [weak self] w, t, cmd, took in self?.commandFinished(w, t, cmd, took) }
         w.onAgentStatus = { [weak self] w, t, p, s in self?.agentStatus(w, t, p, s) }
-        w.onHideInsteadOfClose = { [weak self] w in self?.hideInstead(w) }
         w.setAgentMode(agentMode)
         return w
     }
