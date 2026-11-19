@@ -60,6 +60,8 @@ final class Terminal {
     private(set) var mouseTracking = false
     /// マウスの知らせを SGR の形（1006）で送る
     private(set) var sgrMouse = false
+    /// アプリが DECSCUSR（CSI Ps SP q）で頼んだカーソルの形。0 = 設定ファイルのまま、1〜2 ブロック、3〜4 下線、5〜6 縦棒
+    private(set) var cursorShape = 0
     private var autowrap = true
     private var lastChar: UInt32 = 32
 
@@ -566,6 +568,7 @@ final class Terminal {
         }
         if inter != 0 {
             if inter == 0x21 && f == 0x70 { softReset() }
+            if inter == 0x20 && f == 0x71 { let s = p0(0); if s <= 6 { cursorShape = s } }   // DECSCUSR（SP q）
             return
         }
         if f != 0x6D && f != 0x62 { wrapPending = false }
@@ -911,6 +914,7 @@ final class Terminal {
         bracketedPaste = false
         mouseTracking = false
         sgrMouse = false
+        cursorShape = 0
         state = .ground
         u8need = 0
     }

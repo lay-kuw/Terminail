@@ -70,7 +70,16 @@ final class TerminalView: NSView, NSTextInputClient {
 
     // カーソルの形（cursor-style）：block（マス全体）/ bar（左端の縦棒）/ underline（下線）
     private enum CursorStyle { case block, bar, underline }
-    private var cursorStyle = CursorStyle.block
+    private var configCursorStyle = CursorStyle.block
+    /// いま描く形：アプリが DECSCUSR で頼んでいればそれ、なければ設定ファイルの形
+    private var cursorStyle: CursorStyle {
+        switch term.cursorShape {
+        case 1, 2: return .block
+        case 3, 4: return .underline
+        case 5, 6: return .bar
+        default: return configCursorStyle
+        }
+    }
 
     /// マスの四角を、実際に塗るカーソルの形にする
     private func cursorShape(_ r: CGRect) -> CGRect {
@@ -411,7 +420,8 @@ final class TerminalView: NSView, NSTextInputClient {
         if !one.isEmpty { names.append(one) }
         let fallbacks: [NSFontDescriptor] = names.compactMap { n in
             (NSFont(name: n, size: size)
-                ?? NSFont(name: n.replacingOccurrences(of: " W", with: "-W").replacingOccurrences(of: " ", with: ""), size: size))?
+                ?? NSFont(name: n.replacingOccurrences(of: " W", with: "-W").replacingOccurrences(of: " ", with: ""), size: size)
+                ?? fm.font(withFamily: n, traits: [], weight: 5, size: size))?   // 「Symbols Nerd Font Mono」のようなファミリー名
                 .fontDescriptor
         }
         func withFallback(_ f: NSFont) -> NSFont {
@@ -459,9 +469,9 @@ final class TerminalView: NSView, NSTextInputClient {
         thicken = c.bool("font.thicken")
         glide = c.bool("fx.cursor_glide")
         switch c.string("cursor.style").lowercased() {
-        case "bar": cursorStyle = .bar
-        case "underline": cursorStyle = .underline
-        default: cursorStyle = .block
+        case "bar": configCursorStyle = .bar
+        case "underline": configCursorStyle = .underline
+        default: configCursorStyle = .block
         }
         term.maxScrollback = c.int("shell.scrollback", 0, 200_000)
         buildPalette(colors.palette)
@@ -1108,6 +1118,13 @@ final class TerminalView: NSView, NSTextInputClient {
                 if run.isEmpty { runFg = f; runAttr = at; runStart = col }
                 run.unicodeScalars.append(scalar)
                 runEnd = col + 1
+            } else if (0xE0B0...0xE0B7).contains(ch) {
+                // Powerline の区切り記号は、フォントのグリフだとマスの高さに合わず上下にすき間ができるので図形で描く
+                flush()
+                var pc = color(f, bold: at & A.bold != 0)
+                if at & A.dim != 0 { pc = pc.copy(alpha: 0.55) ?? pc }
+                drawPowerline(ctx, ch, CGRect(x: gx + CGFloat(col) * cellW, y: y, width: cellW, height: cellH), pc)
+                decorate(col, col + 1, f, at)
             } else {
                 flush()
                 let wide = cell.attr & A.wide != 0
@@ -1120,6 +1137,45 @@ final class TerminalView: NSView, NSTextInputClient {
             }
         }
         flush()
+    }
+
+    /// Powerline の区切り記号（U+E0B0〜E0B7）をマスいっぱいの図形で描く
+    ///   B0 ▶ 塗り / B1 ❯ 線 / B2 ◀ 塗り / B3 ❮ 線 / B4 右半円 塗り / B5 右半円 線 / B6 左半円 塗り / B7 左半円 線
+    private func drawPowerline(_ ctx: CGContext, _ ch: UInt32, _ r: CGRect, _ color: CGColor) {
+        let toRight = ch <= 0xE0B1 || ch == 0xE0B4 || ch == 0xE0B5   // 右向き（左の辺がまっすぐ）
+        let solid = ch % 2 == 0
+        let lw = max(1, (cellW * 0.08).rounded())
+        ctx.saveGState()
+        ctx.clip(to: r)
+        let path = CGMutablePath()
+        let back = toRight ? r.minX : r.maxX    // まっすぐな辺の x
+        let tip = toRight ? r.maxX : r.minX     // とがった方・ふくらんだ方の x
+        if ch <= 0xE0B3 {
+            // 三角：線のときは線の太さぶん内側に寄せて、マスの外で切れないようにする
+            let inset = solid ? 0 : lw / 2
+            let b = back, t = toRight ? tip - inset : tip + inset
+            path.move(to: CGPoint(x: b, y: r.minY + (solid ? 0 : inset)))
+            path.addLine(to: CGPoint(x: t, y: r.midY))
+            path.addLine(to: CGPoint(x: b, y: r.maxY - (solid ? 0 : inset)))
+            if solid { path.closeSubpath() }
+        } else {
+            // 半円：まっすぐな辺を中心にした楕円の半分（幅 = マスの幅、高さ = マスの高さ）
+            let inset = solid ? 0 : lw / 2
+            let rx = r.width - inset, ry = r.height / 2 - inset
+            path.addEllipse(in: CGRect(x: back - rx, y: r.midY - ry, width: rx * 2, height: ry * 2))
+        }
+        if solid {
+            ctx.setFillColor(color)
+            ctx.addPath(path)
+            ctx.fillPath()
+        } else {
+            ctx.setStrokeColor(color)
+            ctx.setLineWidth(lw)
+            ctx.setLineJoin(.miter)
+            ctx.addPath(path)
+            ctx.strokePath()
+        }
+        ctx.restoreGState()
     }
 
     /// 日本語入力の変換中の文字
